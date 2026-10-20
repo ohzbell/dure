@@ -264,30 +264,255 @@ function answeredCount(area) {
   return area.questions.filter((question) => getAnswer(question.id, state.authorId)).length;
 }
 
+const KV_ROOT = "https://keyvalue.immanuel.co/api/KeyVal";
+const KV_URL_BUDGET = 270;
+
+let answerStore = { appKey: "" };
+let remoteStamp = "";
+let syncing = false;
+
+function normalizeEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const updatedAt = typeof entry.updatedAt === "string" ? entry.updatedAt : "";
+  if (!updatedAt) return null;
+  if (entry.deleted === true) return { text: "", deleted: true, updatedAt: updatedAt };
+  if (typeof entry.text !== "string") return null;
+  const text = entry.text.trim().slice(0, LIMITS.answer);
+  if (!text) return null;
+  return { text: text, updatedAt: updatedAt };
+}
+
 function mergeAnswers(base, extra) {
-  const out = structuredClone(base && typeof base === "object" ? base : {});
-  if (!extra || typeof extra !== "object" || Array.isArray(extra)) return out;
-  Object.keys(extra).forEach((questionId) => {
-    const byAuthor = extra[questionId];
-    if (!byAuthor || typeof byAuthor !== "object" || Array.isArray(byAuthor)) return;
-    if (!out[questionId] || typeof out[questionId] !== "object") out[questionId] = {};
-    Object.keys(byAuthor).forEach((authorId) => {
-      const entry = byAuthor[authorId];
-      if (!entry || typeof entry.text !== "string") return;
-      const text = entry.text.trim().slice(0, LIMITS.answer);
-      if (!text) return;
-      const updatedAt = typeof entry.updatedAt === "string" ? entry.updatedAt : "";
-      const prev = out[questionId][authorId];
-      if (!prev || String(updatedAt) >= String(prev.updatedAt || "")) {
-        out[questionId][authorId] = { text: text, updatedAt: updatedAt || new Date(0).toISOString() };
-      }
+  const out = {};
+  function take(source) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) return;
+    Object.keys(source).forEach((questionId) => {
+      const byAuthor = source[questionId];
+      if (!byAuthor || typeof byAuthor !== "object" || Array.isArray(byAuthor)) return;
+      Object.keys(byAuthor).forEach((authorId) => {
+        const next = normalizeEntry(byAuthor[authorId]);
+        if (!next) return;
+        if (!out[questionId]) out[questionId] = {};
+        const prev = out[questionId][authorId];
+        if (!prev || String(next.updatedAt) >= String(prev.updatedAt || "")) {
+          out[questionId][authorId] = next;
+        }
+      });
+    });
+  }
+  take(base);
+  take(extra);
+  return out;
+}
+
+function exportableAnswers() {
+  const out = {};
+  Object.keys(state.answers).forEach((questionId) => {
+    const bucket = state.answers[questionId];
+    if (!bucket || typeof bucket !== "object") return;
+    Object.keys(bucket).forEach((authorId) => {
+      const entry = normalizeEntry(bucket[authorId]);
+      if (!entry || entry.deleted) return;
+      if (!out[questionId]) out[questionId] = {};
+      out[questionId][authorId] = { text: entry.text, updatedAt: entry.updatedAt };
     });
   });
   return out;
 }
 
-function persistAnswers() {
+function cacheAnswers() {
   writeStore(STORAGE.answers, state.answers);
+}
+
+function timeKey(iso) {
+  return String(iso || "").replace(/\D/g, "").slice(0, 17).padEnd(17, "0");
+}
+
+function encodeB64Url(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeB64Url(text) {
+  const pad = (4 - (text.length % 4)) % 4;
+  const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new TextDecoder().decode(bytes);
+}
+
+function pairName(questionId, authorId, suffix) {
+  const question = String(questionId).replace(/[^A-Za-z0-9-]/g, "");
+  const author = String(authorId).replace(/[^A-Za-z0-9-]/g, "");
+  if (!question || !author) throw new Error("질문 또는 작성자 아이디를 서버 키로 바꾸지 못했습니다.");
+  return "a_" + question + "_" + author + "_" + suffix;
+}
+
+function valueBudget(name) {
+  const prefix = KV_ROOT + "/UpdateValue/" + answerStore.appKey + "/" + name + "/";
+  return KV_URL_BUDGET - prefix.length;
+}
+
+function encodeChunks(value, budget) {
+  const encoded = encodeB64Url(JSON.stringify(value));
+  const size = Math.min(150, budget);
+  if (size < 40) throw new Error("서버 키 이름이 너무 깁니다.");
+  const parts = [];
+  for (let index = 0; index < encoded.length; index += size) parts.push(encoded.slice(index, index + size));
+  return parts.length ? parts : [encodeB64Url("{}")];
+}
+
+async function kvPut(name, value) {
+  if (!/^[A-Za-z0-9_-]+$/.test(name) || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("서버에 보낼 수 없는 문자가 있습니다.");
+  }
+  if (value.length > valueBudget(name)) throw new Error("서버에 보낼 조각이 너무 깁니다.");
+  const response = await fetch(KV_ROOT + "/UpdateValue/" + answerStore.appKey + "/" + name + "/" + value, {
+    method: "POST",
+    cache: "no-store"
+  });
+  const body = (await response.text()).trim();
+  if (!response.ok || body !== "true") throw new Error("답변 서버에 저장하지 못했습니다.");
+}
+
+async function kvRead(name) {
+  const response = await fetch(KV_ROOT + "/GetValue/" + answerStore.appKey + "/" + name, { cache: "no-store" });
+  if (!response.ok) throw new Error("답변 서버를 읽지 못했습니다.");
+  const data = await response.json();
+  return data == null ? "" : String(data);
+}
+
+async function mapPool(items, limit, worker) {
+  let cursor = 0;
+  async function run() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      await worker(items[index], index);
+    }
+  }
+  const count = Math.min(limit, items.length);
+  const jobs = [];
+  for (let index = 0; index < count; index += 1) jobs.push(run());
+  await Promise.all(jobs);
+}
+
+async function writeBlob(baseName, value) {
+  const sample = baseName + "0";
+  const parts = encodeChunks(value, valueBudget(sample));
+  await mapPool(parts, 4, (part, index) => kvPut(baseName + index, part));
+  await kvPut(baseName + "n", String(parts.length));
+}
+
+async function readBlob(baseName) {
+  const count = Number(await kvRead(baseName + "n")) || 0;
+  if (!count) return null;
+  let blob = "";
+  for (let index = 0; index < count; index += 1) blob += await kvRead(baseName + index);
+  if (!blob) return null;
+  return JSON.parse(decodeB64Url(blob));
+}
+
+async function writeEntry(questionId, authorId, entry) {
+  const payload = entry.deleted
+    ? { d: true, u: entry.updatedAt }
+    : { t: entry.text, u: entry.updatedAt };
+  const base = pairName(questionId, authorId, "p");
+  await writeBlob(base, payload);
+  await kvPut(pairName(questionId, authorId, "u"), timeKey(entry.updatedAt));
+}
+
+async function readEntry(questionId, authorId) {
+  const payload = await readBlob(pairName(questionId, authorId, "p"));
+  if (!payload || typeof payload.u !== "string") return null;
+  if (payload.d === true) return { text: "", deleted: true, updatedAt: payload.u };
+  if (typeof payload.t !== "string") return null;
+  return normalizeEntry({ text: payload.t, updatedAt: payload.u });
+}
+
+async function readIndex() {
+  const payload = await readBlob("i");
+  if (!Array.isArray(payload)) return [];
+  return payload.filter((pair) => Array.isArray(pair) && typeof pair[0] === "string" && typeof pair[1] === "string");
+}
+
+async function writeIndex(pairs) {
+  await writeBlob("i", pairs);
+  await kvPut("iu", timeKey(new Date().toISOString()));
+}
+
+async function ensureIndexed(pairs) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const current = await readIndex();
+    const map = new Map();
+    current.forEach((pair) => map.set(pair[0] + "\n" + pair[1], pair));
+    pairs.forEach((pair) => map.set(pair[0] + "\n" + pair[1], pair));
+    await writeIndex(Array.from(map.values()));
+    const verify = await readIndex();
+    const missing = pairs.some((pair) => !verify.some((item) => item[0] === pair[0] && item[1] === pair[1]));
+    if (!missing) {
+      remoteStamp = await kvRead("iu");
+      return;
+    }
+  }
+  throw new Error("답변 목록을 서버에 반영하지 못했습니다.");
+}
+
+async function syncEntries(pairs) {
+  const fresh = [];
+  for (let index = 0; index < pairs.length; index += 1) {
+    const questionId = pairs[index][0];
+    const authorId = pairs[index][1];
+    const entry = normalizeEntry(state.answers[questionId] && state.answers[questionId][authorId]);
+    if (!entry) continue;
+    const remote = await kvRead(pairName(questionId, authorId, "u"));
+    if (remote && remote > timeKey(entry.updatedAt)) {
+      const newer = await readEntry(questionId, authorId);
+      if (newer) state.answers[questionId][authorId] = newer;
+      continue;
+    }
+    await writeEntry(questionId, authorId, entry);
+    fresh.push([questionId, authorId]);
+  }
+  if (fresh.length) await ensureIndexed(fresh);
+  cacheAnswers();
+}
+
+async function fetchRemoteAnswers() {
+  const pairs = await readIndex();
+  const out = {};
+  await mapPool(pairs, 6, async (pair) => {
+    const entry = await readEntry(pair[0], pair[1]);
+    if (!entry) return;
+    if (!out[pair[0]]) out[pair[0]] = {};
+    out[pair[0]][pair[1]] = entry;
+  });
+  return out;
+}
+
+async function refreshAnswers() {
+  if (syncing || saveBusy || !answerStore.appKey) return;
+  syncing = true;
+  try {
+    const stamp = await kvRead("iu");
+    if (stamp === remoteStamp) return;
+    const remote = await fetchRemoteAnswers();
+    remoteStamp = stamp;
+    const merged = mergeAnswers(state.answers, remote);
+    if (JSON.stringify(merged) === JSON.stringify(state.answers)) return;
+    state.answers = merged;
+    cacheAnswers();
+    const typing = document.activeElement && document.activeElement.tagName === "TEXTAREA";
+    if (!typing) renderBoard();
+  } catch (error) {
+    return;
+  } finally {
+    syncing = false;
+  }
 }
 
 function persistContent() {
@@ -331,8 +556,21 @@ async function loadData() {
     }
   }
 
-  state.answers = mergeAnswers(answersFile.answers || {}, readStore(STORAGE.answers) || {});
-  persistAnswers();
+  let storeFile = null;
+  try { storeFile = await fetchJson("data/store.json"); } catch (error) { storeFile = null; }
+  if (!storeFile || typeof storeFile.appKey !== "string" || !/^[A-Za-z0-9]+$/.test(storeFile.appKey)) {
+    throw new Error("data/store.json의 저장소 키를 확인해 주세요.");
+  }
+  answerStore = storeFile;
+  try {
+    const remote = await fetchRemoteAnswers();
+    remoteStamp = await kvRead("iu");
+    state.answers = mergeAnswers(answersFile.answers || {}, remote);
+    cacheAnswers();
+  } catch (error) {
+    state.answers = mergeAnswers(answersFile.answers || {}, readStore(STORAGE.answers) || {});
+    toast("답변 서버에 연결하지 못했습니다. 이전에 이 브라우저에 남은 답변만 보여 줍니다.");
+  }
   state.areaId = state.areas[0].id;
   const storedAuthor = readRaw(STORAGE.author) || "";
   state.authorId = state.authors.some((author) => author.id === storedAuthor) ? storedAuthor : "";
@@ -428,8 +666,9 @@ function renderQuestions() {
 function renderQuestion(question, index, author) {
   const saved = state.answers[question.id] || {};
   const blocks = state.authors.map((person) => {
-    const entry = saved[person.id];
-    const text = entry && entry.text ? entry.text : "아직 답변이 없습니다.";
+    const raw = saved[person.id];
+    const entry = raw && raw.text && !raw.deleted ? raw : null;
+    const text = entry ? entry.text : "아직 답변이 없습니다.";
     return el("div", { class: author && person.id === author.id ? "answer is-self" : "answer" }, [
       el("div", { class: "answer-name", text: person.name }),
       el("p", { class: entry && entry.text ? "answer-text" : "answer-text is-empty", text: text }),
@@ -444,7 +683,7 @@ function renderQuestion(question, index, author) {
     const draftBucket = state.drafts[question.id] || {};
     const value = Object.prototype.hasOwnProperty.call(draftBucket, author.id)
       ? draftBucket[author.id]
-      : (saved[author.id] ? saved[author.id].text : "");
+      : (saved[author.id] && saved[author.id].text && !saved[author.id].deleted ? saved[author.id].text : "");
     const box = el("textarea", {
       class: "textarea",
       "data-question": question.id,
@@ -456,7 +695,7 @@ function renderQuestion(question, index, author) {
     box.value = value;
     const boxId = "answer-" + question.id;
     box.id = boxId;
-    const hasSaved = Boolean(saved[author.id] && saved[author.id].text);
+    const hasSaved = Boolean(saved[author.id] && saved[author.id].text && !saved[author.id].deleted);
     editor = el("div", { class: "editor" }, [
       el("label", { class: "editor-label", for: boxId, text: author.name + " 답변 작성" }),
       box,
@@ -512,7 +751,7 @@ function requestSave(questionId) {
   openCaptcha();
 }
 
-function requestDelete(questionId) {
+async function requestDelete(questionId) {
   if (!state.authorId) {
     toast("작성자를 먼저 선택해 주세요.");
     return;
@@ -521,12 +760,24 @@ function requestDelete(questionId) {
   if (!assertCooldown()) return;
   if (!window.confirm("이 답변을 삭제합니다. 계속할까요?")) return;
   if (!assertCooldown()) return;
-  delete state.answers[questionId][state.authorId];
-  if (Object.keys(state.answers[questionId]).length === 0) delete state.answers[questionId];
+  const previous = structuredClone(state.answers[questionId][state.authorId]);
+  state.answers[questionId][state.authorId] = {
+    text: "",
+    deleted: true,
+    updatedAt: new Date().toISOString()
+  };
   if (state.drafts[questionId]) delete state.drafts[questionId][state.authorId];
-  persistAnswers();
-  stampCooldown();
-  toast("답변을 삭제했습니다.");
+  saveBusy = true;
+  try {
+    await syncEntries([[questionId, state.authorId]]);
+    stampCooldown();
+    toast("답변을 삭제했습니다.");
+  } catch (error) {
+    state.answers[questionId][state.authorId] = previous;
+    toast("서버에서 삭제하지 못했습니다. 다시 시도해 주세요.");
+  } finally {
+    saveBusy = false;
+  }
   renderBoard();
 }
 
@@ -562,21 +813,27 @@ async function submitCaptcha() {
   }
   if (!assertCooldown()) return;
   saveBusy = true;
+  const questionId = pendingSave.questionId;
+  const authorId = pendingSave.authorId;
+  if (!state.answers[questionId]) state.answers[questionId] = {};
+  const previous = state.answers[questionId][authorId] ? structuredClone(state.answers[questionId][authorId]) : null;
+  state.answers[questionId][authorId] = {
+    text: pendingSave.text,
+    updatedAt: new Date().toISOString()
+  };
+  if (!state.drafts[questionId]) state.drafts[questionId] = {};
+  state.drafts[questionId][authorId] = pendingSave.text;
   try {
-    const questionId = pendingSave.questionId;
-    const authorId = pendingSave.authorId;
-    if (!state.answers[questionId]) state.answers[questionId] = {};
-    state.answers[questionId][authorId] = {
-      text: pendingSave.text,
-      updatedAt: new Date().toISOString()
-    };
-    if (!state.drafts[questionId]) state.drafts[questionId] = {};
-    state.drafts[questionId][authorId] = pendingSave.text;
-    persistAnswers();
+    await syncEntries([[questionId, authorId]]);
     stampCooldown();
     pendingSave = null;
     closeModal("captcha-modal");
     toast("답변을 저장했습니다.");
+    renderBoard();
+  } catch (error) {
+    if (previous) state.answers[questionId][authorId] = previous;
+    else delete state.answers[questionId][authorId];
+    toast("서버에 저장하지 못했습니다. 다시 시도해 주세요.");
     renderBoard();
   } finally {
     saveBusy = false;
@@ -954,11 +1211,23 @@ async function deleteQuestion(id) {
   state.areas.forEach((area) => {
     area.questions = area.questions.filter((item) => item.id !== id);
   });
-  delete state.answers[id];
-  persistAnswers();
+  const bucket = state.answers[id] || {};
+  const removed = Object.keys(bucket);
+  const stamp = new Date().toISOString();
+  removed.forEach((authorId) => {
+    bucket[authorId] = { text: "", deleted: true, updatedAt: stamp };
+  });
+  let answersRemoved = true;
+  if (removed.length) {
+    try {
+      await syncEntries(removed.map((authorId) => [id, authorId]));
+    } catch (error) {
+      answersRemoved = false;
+    }
+  }
   persistContent();
   stampCooldown();
-  toast("질문을 삭제했습니다.");
+  toast(answersRemoved ? "질문을 삭제했습니다." : "질문은 지웠지만 서버의 답변은 남았습니다. 다시 시도해 주세요.");
   renderAdmin();
   renderBoard();
 }
@@ -1137,7 +1406,7 @@ async function importAnswers(file) {
     toast("파일이 너무 큽니다.");
     return;
   }
-  if (!window.confirm("답변 파일을 이 브라우저 기록과 합칩니다. 더 최근 시각의 답변을 남깁니다. 계속할까요?")) return;
+  if (!window.confirm("답변 파일을 서버의 답변과 합칩니다. 더 최근 시각의 답변을 남깁니다. 계속할까요?")) return;
   try {
     const data = await readJsonFile(file);
     if (!data || typeof data.answers !== "object" || data.answers == null || Array.isArray(data.answers)) {
@@ -1145,11 +1414,20 @@ async function importAnswers(file) {
       return;
     }
     state.answers = mergeAnswers(state.answers, data.answers);
-    persistAnswers();
-    toast("답변 파일을 반영했습니다.");
+    const pairs = [];
+    Object.keys(state.answers).forEach((questionId) => {
+      Object.keys(state.answers[questionId] || {}).forEach((authorId) => {
+        if (normalizeEntry(state.answers[questionId][authorId])) pairs.push([questionId, authorId]);
+      });
+    });
+    saveBusy = true;
+    await syncEntries(pairs);
+    toast("답변 파일을 서버에 반영했습니다.");
     renderBoard();
   } catch (error) {
-    toast("답변 파일을 읽지 못했습니다.");
+    toast(error && error.message && error.message.indexOf("형식") >= 0 ? error.message : "답변 파일을 서버에 반영하지 못했습니다.");
+  } finally {
+    saveBusy = false;
   }
 }
 
@@ -1297,7 +1575,7 @@ function bindEvents() {
   });
 
   document.getElementById("export-answers").addEventListener("click", () => {
-    downloadJson("answers.json", { answers: state.answers });
+    downloadJson("answers.json", { answers: exportableAnswers() });
   });
   document.getElementById("import-answers").addEventListener("click", () => {
     document.getElementById("import-answers-file").click();
@@ -1324,6 +1602,10 @@ async function init() {
     updateAdminButton();
     updateCooldownUI();
     window.setInterval(updateCooldownUI, 500);
+    window.setInterval(refreshAnswers, 20000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshAnswers();
+    });
   } catch (error) {
     showFatal(error && error.message ? error.message : "데이터를 불러오지 못했습니다.");
   }
