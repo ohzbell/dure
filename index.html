@@ -41,9 +41,20 @@
     <nav id="area-tabs" class="tabs" role="tablist" aria-label="영역"></nav>
     <main id="main" class="layout">
       <section id="question-list" class="questions" aria-live="polite"></section>
-      <aside id="reference-panel" class="aside"></aside>
     </main>
   </div>
+
+  <button type="button" class="fab-ref" id="ref-fab" aria-haspopup="dialog" aria-controls="ref-list-modal">
+    <span class="fab-ref-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 4h8l3 3v13H7z"></path>
+        <path d="M14 4v4h4"></path>
+        <path d="M10 12h6M10 16h6"></path>
+      </svg>
+    </span>
+    <span class="fab-ref-label">참조</span>
+    <span class="fab-ref-count" id="ref-fab-count" hidden>0</span>
+  </button>
 
   <div id="captcha-modal" class="modal" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="captcha-title">
@@ -61,12 +72,25 @@
     </div>
   </div>
 
-  <div id="ref-modal" class="modal" hidden>
-    <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="ref-modal-title">
+  <div id="ref-list-modal" class="modal" hidden>
+    <div class="modal-card modal-sheet" role="dialog" aria-modal="true" aria-labelledby="ref-list-title">
       <p class="eyebrow">참조</p>
-      <h2 id="ref-modal-title">선택한 자료</h2>
+      <h2 id="ref-list-title">이 영역의 자료</h2>
+      <p class="muted" id="ref-list-note">읽을 자료를 고르세요.</p>
+      <div id="ref-list-body" class="ref-pick-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="ref-list-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ref-modal" class="modal" hidden>
+    <div class="modal-card modal-sheet modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="ref-modal-title">
+      <p class="eyebrow">참조</p>
+      <h2 id="ref-modal-title">자료</h2>
       <div id="ref-modal-body"></div>
       <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="ref-modal-back">목록</button>
         <button type="button" class="btn btn-primary" id="ref-modal-close">닫기</button>
       </div>
     </div>

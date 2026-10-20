@@ -31,7 +31,6 @@ const state = {
   references: [],
   answers: {},
   drafts: {},
-  selected: {},
   areaId: "",
   adminAreaId: "",
   adminTab: "questions",
@@ -840,63 +839,85 @@ async function submitCaptcha() {
   }
 }
 
-function selectedRefs() {
+function areaReferences() {
   const area = currentArea();
-  return state.references.filter((ref) => ref.areaId === area.id && state.selected[ref.id]);
+  return state.references.filter((item) => item.areaId === area.id);
 }
 
-function updateRefButton() {
-  const button = document.getElementById("open-refs");
-  const note = document.getElementById("ref-count");
-  if (!button) return;
-  const count = selectedRefs().length;
-  button.disabled = count === 0;
-  button.textContent = count ? "선택 내용 보기 (" + count + ")" : "선택 내용 보기";
-  if (note) note.textContent = count ? count + "개 선택됨" : "확인할 참조를 체크하세요.";
+function updateRefFab() {
+  const button = document.getElementById("ref-fab");
+  const badge = document.getElementById("ref-fab-count");
+  if (!button || !badge) return;
+  const count = areaReferences().length;
+  const area = currentArea();
+  button.classList.toggle("is-empty", count === 0);
+  button.setAttribute("aria-label", count
+    ? (area.title || "이 영역") + " 참조 " + count + "개 열기"
+    : "이 영역에 등록된 참조가 없습니다");
+  if (count) {
+    badge.hidden = false;
+    badge.textContent = String(count);
+  } else {
+    badge.hidden = true;
+  }
 }
 
 function renderReferences() {
-  const area = currentArea();
-  const refs = state.references.filter((item) => item.areaId === area.id);
-  const root = document.getElementById("reference-panel");
-  const items = refs.map((ref) => {
-    const id = "ref-check-" + ref.id;
-    const input = el("input", { type: "checkbox", id: id, value: ref.id });
-    input.checked = Boolean(state.selected[ref.id]);
-    input.addEventListener("change", () => {
-      if (input.checked) state.selected[ref.id] = true;
-      else delete state.selected[ref.id];
-      updateRefButton();
-    });
-    return el("label", { class: "ref-item", for: id }, [input, el("span", { text: ref.title })]);
-  });
-  const button = el("button", { type: "button", class: "btn btn-primary", id: "open-refs", text: "선택 내용 보기" });
-  button.addEventListener("click", openReferenceModal);
-  root.replaceChildren(el("div", { class: "panel" }, [
-    el("p", { class: "eyebrow", text: "참조" }),
-    el("h2", { text: "이 영역의 자료" }),
-    refs.length ? el("div", { class: "ref-list" }, items) : el("p", { class: "empty", text: "등록된 참조가 없습니다." }),
-    button,
-    el("p", { class: "hint", id: "ref-count", text: "" })
-  ]));
-  updateRefButton();
+  updateRefFab();
 }
 
-function openReferenceModal() {
-  const refs = selectedRefs();
+function openReferenceList() {
+  const refs = areaReferences();
+  const area = currentArea();
+  const body = document.getElementById("ref-list-body");
+  const note = document.getElementById("ref-list-note");
+  document.getElementById("ref-list-title").textContent = (area.title || "이 영역") + " 자료";
   if (!refs.length) {
-    toast("참조를 하나 이상 체크해 주세요.");
+    note.textContent = "이 영역에 등록된 참조가 없습니다.";
+    body.replaceChildren(el("p", { class: "empty", text: "관리자가 자료를 올리면 여기에 나타납니다." }));
+  } else {
+    note.textContent = "읽을 자료를 고르세요.";
+    body.replaceChildren(...refs.map((ref) => {
+      return el("button", {
+        type: "button",
+        class: "ref-pick",
+        "data-ref-id": ref.id
+      }, [
+        el("span", { class: "ref-pick-title", text: ref.title }),
+        el("span", { class: "ref-pick-hint", text: "읽기" })
+      ]);
+    }));
+  }
+  openModal("ref-list-modal");
+  document.getElementById("ref-list-close").focus();
+}
+
+function openReferenceItem(id) {
+  const ref = state.references.find((item) => item.id === id);
+  if (!ref) {
+    toast("참조를 찾지 못했습니다.");
     return;
   }
-  document.getElementById("ref-modal-title").textContent = "선택한 자료 " + refs.length + "개";
-  document.getElementById("ref-modal-body").replaceChildren(...refs.map((ref) => {
-    return el("article", { class: "ref-article" }, [
-      el("h3", { text: ref.title }),
-      el("p", { text: ref.body })
-    ]);
-  }));
-  openModal("ref-modal");
-  document.getElementById("ref-modal-close").focus();
+  document.getElementById("ref-modal-title").textContent = ref.title;
+  document.getElementById("ref-modal-body").replaceChildren(el("article", { class: "ref-article" }, [
+    el("p", { text: ref.body })
+  ]));
+  document.getElementById("ref-list-modal").hidden = true;
+  document.getElementById("ref-modal").hidden = false;
+  document.body.classList.add("modal-open");
+  document.getElementById("ref-modal-back").focus();
+}
+
+function backToReferenceList() {
+  document.getElementById("ref-modal").hidden = true;
+  document.getElementById("ref-list-modal").hidden = false;
+  document.body.classList.add("modal-open");
+  document.getElementById("ref-list-close").focus();
+}
+
+function closeAllReferenceModals() {
+  document.getElementById("ref-modal").hidden = true;
+  closeModal("ref-list-modal");
 }
 
 function openModal(id) {
@@ -1293,7 +1314,6 @@ async function deleteReference(id) {
   if (!window.confirm("이 참조를 삭제합니다. 계속할까요?")) return;
   if (!assertCooldown()) return;
   state.references = state.references.filter((item) => item.id !== id);
-  delete state.selected[id];
   persistContent();
   stampCooldown();
   toast("참조를 삭제했습니다.");
@@ -1555,7 +1575,14 @@ function bindEvents() {
       submitCaptcha();
     }
   });
-  document.getElementById("ref-modal-close").addEventListener("click", () => closeModal("ref-modal"));
+  document.getElementById("ref-fab").addEventListener("click", openReferenceList);
+  document.getElementById("ref-list-close").addEventListener("click", () => closeModal("ref-list-modal"));
+  document.getElementById("ref-list-body").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-ref-id]");
+    if (button) openReferenceItem(button.dataset.refId);
+  });
+  document.getElementById("ref-modal-back").addEventListener("click", backToReferenceList);
+  document.getElementById("ref-modal-close").addEventListener("click", closeAllReferenceModals);
   document.getElementById("admin-close").addEventListener("click", closeAdmin);
   document.getElementById("admin-logout").addEventListener("click", logout);
 
@@ -1563,6 +1590,8 @@ function bindEvents() {
     modal.addEventListener("click", (event) => {
       if (event.target !== modal) return;
       if (modal.id === "captcha-modal") closeCaptcha();
+      else if (modal.id === "ref-modal") closeAllReferenceModals();
+      else if (modal.id === "ref-list-modal") closeModal("ref-list-modal");
       else closeModal(modal.id);
     });
   });
@@ -1571,7 +1600,8 @@ function bindEvents() {
     if (event.key !== "Escape") return;
     if (!document.getElementById("captcha-modal").hidden) closeCaptcha();
     else if (!document.getElementById("login-modal").hidden) closeModal("login-modal");
-    else if (!document.getElementById("ref-modal").hidden) closeModal("ref-modal");
+    else if (!document.getElementById("ref-modal").hidden) backToReferenceList();
+    else if (!document.getElementById("ref-list-modal").hidden) closeModal("ref-list-modal");
   });
 
   document.getElementById("export-answers").addEventListener("click", () => {
