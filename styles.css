@@ -283,6 +283,11 @@ button:disabled {
   background: #f2faf8;
 }
 
+.answer.is-sample {
+  border-color: #e2d2b4;
+  background: #fbf6ee;
+}
+
 .answer-name { font-size: 12px; font-weight: 600; }
 
 .answer-text {

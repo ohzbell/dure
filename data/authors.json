@@ -1,20 +1,21 @@
 {
   "authors": [
     {
-      "id": "author-1",
-      "name": "작성자 1"
+      "id": "author-ai",
+      "name": "AI (Auto)",
+      "locked": true
     },
     {
-      "id": "author-2",
-      "name": "작성자 2"
+      "id": "author-dad",
+      "name": "아빠"
     },
     {
-      "id": "author-3",
-      "name": "작성자 3"
+      "id": "author-mom",
+      "name": "엄마"
     },
     {
-      "id": "author-4",
-      "name": "작성자 4"
+      "id": "author-child",
+      "name": "아이"
     }
   ]
 }

@@ -572,7 +572,7 @@ async function loadData() {
   }
   state.areaId = state.areas[0].id;
   const storedAuthor = readRaw(STORAGE.author) || "";
-  state.authorId = state.authors.some((author) => author.id === storedAuthor) ? storedAuthor : "";
+  state.authorId = state.authors.some((author) => author.id === storedAuthor && author.locked !== true) ? storedAuthor : "";
 }
 
 function isQuestionFile(data) {
@@ -611,13 +611,18 @@ function updateAdminButton() {
   document.getElementById("admin-open").textContent = state.isAdmin ? "관리 화면" : "관리";
 }
 
+function writableAuthors() {
+  return state.authors.filter((author) => author.locked !== true);
+}
+
 function renderAuthorSelect() {
   const select = document.getElementById("author-select");
+  const writers = writableAuthors();
   select.replaceChildren(
     el("option", { value: "", text: "이름을 선택하세요" }),
-    ...state.authors.map((author) => el("option", { value: author.id, text: author.name }))
+    ...writers.map((author) => el("option", { value: author.id, text: author.name }))
   );
-  select.value = state.authors.some((author) => author.id === state.authorId) ? state.authorId : "";
+  select.value = writers.some((author) => author.id === state.authorId) ? state.authorId : "";
   state.authorId = select.value;
 }
 
@@ -668,7 +673,9 @@ function renderQuestion(question, index, author) {
     const raw = saved[person.id];
     const entry = raw && raw.text && !raw.deleted ? raw : null;
     const text = entry ? entry.text : "아직 답변이 없습니다.";
-    return el("div", { class: author && person.id === author.id ? "answer is-self" : "answer" }, [
+    const sample = person.locked === true;
+    const mine = !sample && author && person.id === author.id;
+    return el("div", { class: sample ? "answer is-sample" : mine ? "answer is-self" : "answer" }, [
       el("div", { class: "answer-name", text: person.name }),
       el("p", { class: entry && entry.text ? "answer-text" : "answer-text is-empty", text: text }),
       entry && entry.updatedAt ? el("time", { class: "answer-time", datetime: entry.updatedAt, text: formatTime(entry.updatedAt) }) : null
