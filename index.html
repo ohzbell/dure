@@ -5,10 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#f4efe6">
-  <title>DURE 작업 보드</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,640&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+  <title>두레중 면접 준비</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -21,7 +19,7 @@
     <header class="top">
       <div class="brand">
         <p class="eyebrow">DURE</p>
-        <h1>작업 보드</h1>
+        <h1>두레중 면접 준비</h1>
         <p class="lede">두레자연중학교 면접 연습입니다. 아빠, 엄마, 아이가 이름을 고르고 답하고, AI 모범 답변을 옆에 둡니다.</p>
       </div>
       <div class="top-actions">
@@ -61,6 +59,22 @@
     <span class="fab-ref-label">참조</span>
     <span class="fab-ref-count" id="ref-fab-count" hidden>0</span>
   </button>
+
+  <div id="answer-modal" class="modal" hidden>
+    <form class="modal-card modal-card-wide" id="answer-form" role="dialog" aria-modal="true" aria-labelledby="answer-modal-title">
+      <p class="eyebrow" id="answer-modal-author">답변</p>
+      <h2 id="answer-modal-title">답변 작성</h2>
+      <p class="muted" id="answer-modal-question"></p>
+      <label class="field" for="answer-modal-text">답변
+        <textarea id="answer-modal-text" class="textarea" rows="8" maxlength="8000" autocomplete="off"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="answer-modal-close">닫기</button>
+        <button type="button" class="btn btn-danger" id="answer-modal-delete" data-guard="cooldown" hidden>삭제</button>
+        <button type="submit" class="btn btn-primary" id="answer-modal-save" data-guard="cooldown">저장</button>
+      </div>
+    </form>
+  </div>
 
   <div id="captcha-modal" class="modal" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="captcha-title">

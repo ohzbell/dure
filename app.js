@@ -699,48 +699,75 @@ function renderQuestion(question, index, author) {
     ]);
   });
 
-  let editor;
-  if (!author) {
-    editor = el("p", { class: "hint", text: "작성자를 선택하면 이 질문에 답변을 남길 수 있습니다." });
-  } else {
-    const draftBucket = state.drafts[question.id] || {};
-    const value = Object.prototype.hasOwnProperty.call(draftBucket, author.id)
-      ? draftBucket[author.id]
-      : (saved[author.id] && saved[author.id].text && !saved[author.id].deleted ? saved[author.id].text : "");
-    const box = el("textarea", {
-      class: "textarea",
-      "data-question": question.id,
-      maxlength: String(LIMITS.answer),
-      rows: "5",
-      placeholder: author.name + "의 답변",
-      autocomplete: "off"
-    });
-    box.value = value;
-    const boxId = "answer-" + question.id;
-    box.id = boxId;
-    const hasSaved = Boolean(saved[author.id] && saved[author.id].text && !saved[author.id].deleted);
-    editor = el("div", { class: "editor" }, [
-      el("label", { class: "editor-label", for: boxId, text: author.name + " 답변 작성" }),
-      box,
-      el("div", { class: "editor-actions" }, [
-        el("button", { type: "button", class: "btn btn-primary", "data-action": "save", "data-question": question.id, "data-guard": "cooldown", text: "답변 저장" }),
-        hasSaved ? el("button", { type: "button", class: "btn btn-danger", "data-action": "delete", "data-question": question.id, "data-guard": "cooldown", text: "답변 삭제" }) : null
-      ])
-    ]);
-  }
-
   return el("article", { class: "question" }, [
     el("div", { class: "q-index", text: String(index + 1).padStart(2, "0") }),
     el("div", { class: "q-body" }, [
       el("h3", { class: "q-text", text: question.text }),
-      el("div", { class: "answers" }, blocks),
-      editor
+      el("div", { class: "q-actions" }, [
+        el("button", {
+          type: "button",
+          class: "btn btn-primary",
+          "data-action": "write",
+          "data-question": question.id,
+          text: "답변작성"
+        })
+      ]),
+      el("div", { class: "answers" }, blocks)
     ])
   ]);
 }
 
+function findQuestion(questionId) {
+  for (let index = 0; index < state.areas.length; index += 1) {
+    const question = state.areas[index].questions.find((item) => item.id === questionId);
+    if (question) return question;
+  }
+  return null;
+}
+
+function answerDraft(questionId, authorId) {
+  const draftBucket = state.drafts[questionId] || {};
+  if (Object.prototype.hasOwnProperty.call(draftBucket, authorId)) return draftBucket[authorId];
+  const saved = state.answers[questionId] && state.answers[questionId][authorId];
+  return saved && saved.text && !saved.deleted ? saved.text : "";
+}
+
+function closeAnswerModal() {
+  const modal = document.getElementById("answer-modal");
+  if (!modal || modal.hidden) return;
+  if (document.activeElement && modal.contains(document.activeElement)) document.activeElement.blur();
+  modal.hidden = true;
+  const adminOpen = !document.getElementById("admin").hidden;
+  const anyModal = Array.from(document.querySelectorAll(".modal")).some((node) => !node.hidden);
+  if (!adminOpen && !anyModal) document.body.classList.remove("modal-open");
+}
+
+function openAnswerModal(questionId) {
+  if (!state.authorId) {
+    toast("작성자를 먼저 선택해 주세요.");
+    return;
+  }
+  const question = findQuestion(questionId);
+  const author = currentAuthor();
+  if (!question || !author) return;
+  const saved = state.answers[questionId] && state.answers[questionId][author.id];
+  const hasSaved = Boolean(saved && saved.text && !saved.deleted);
+  document.getElementById("answer-modal-author").textContent = author.name;
+  document.getElementById("answer-modal-question").textContent = question.text;
+  const box = document.getElementById("answer-modal-text");
+  box.dataset.question = questionId;
+  box.value = answerDraft(questionId, author.id);
+  const remove = document.getElementById("answer-modal-delete");
+  remove.hidden = !hasSaved;
+  remove.dataset.question = questionId;
+  openModal("answer-modal");
+  box.focus();
+}
+
 function questionField(questionId) {
-  return Array.from(document.querySelectorAll("textarea[data-question]")).find((node) => node.dataset.question === questionId) || null;
+  const box = document.getElementById("answer-modal-text");
+  if (box && box.dataset.question === questionId) return box;
+  return null;
 }
 
 function requestSave(questionId) {
@@ -794,6 +821,7 @@ async function requestDelete(questionId) {
   try {
     await syncEntries([[questionId, state.authorId]]);
     stampCooldown();
+    closeAnswerModal();
     toast("답변을 삭제했습니다.");
   } catch (error) {
     state.answers[questionId][state.authorId] = previous;
@@ -851,6 +879,7 @@ async function submitCaptcha() {
     stampCooldown();
     pendingSave = null;
     closeModal("captcha-modal");
+    closeAnswerModal();
     toast("답변을 저장했습니다.");
     renderBoard();
   } catch (error) {
@@ -1554,7 +1583,13 @@ function bindEvents() {
       if (state.authorId) localStorage.setItem(STORAGE.author, state.authorId);
       else localStorage.removeItem(STORAGE.author);
     } catch (error) { /* ignore */ }
+    const questionId = document.getElementById("answer-modal-text").dataset.question;
+    const writing = !document.getElementById("answer-modal").hidden;
     renderBoard();
+    if (writing && questionId) {
+      if (state.authorId) openAnswerModal(questionId);
+      else closeAnswerModal();
+    }
   });
 
   document.getElementById("area-tabs").addEventListener("click", (event) => {
@@ -1564,9 +1599,9 @@ function bindEvents() {
     renderBoard();
   });
 
-  document.getElementById("question-list").addEventListener("input", (event) => {
+  document.getElementById("answer-modal-text").addEventListener("input", (event) => {
     const box = event.target;
-    if (!box.matches || !box.matches("textarea[data-question]") || !state.authorId) return;
+    if (!state.authorId || !box.dataset.question) return;
     if (!state.drafts[box.dataset.question]) state.drafts[box.dataset.question] = {};
     state.drafts[box.dataset.question][state.authorId] = box.value;
   });
@@ -1574,8 +1609,18 @@ function bindEvents() {
   document.getElementById("question-list").addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
-    if (button.dataset.action === "save") requestSave(button.dataset.question);
-    if (button.dataset.action === "delete") requestDelete(button.dataset.question);
+    if (button.dataset.action === "write") openAnswerModal(button.dataset.question);
+  });
+
+  document.getElementById("answer-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const questionId = document.getElementById("answer-modal-text").dataset.question;
+    if (questionId) requestSave(questionId);
+  });
+  document.getElementById("answer-modal-close").addEventListener("click", closeAnswerModal);
+  document.getElementById("answer-modal-delete").addEventListener("click", () => {
+    const questionId = document.getElementById("answer-modal-delete").dataset.question;
+    if (questionId) requestDelete(questionId);
   });
 
   document.getElementById("ai-toggle-input").addEventListener("change", (event) => {
@@ -1633,6 +1678,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!document.getElementById("captcha-modal").hidden) closeCaptcha();
+    else if (!document.getElementById("answer-modal").hidden) closeAnswerModal();
     else if (!document.getElementById("login-modal").hidden) closeModal("login-modal");
     else if (!document.getElementById("ref-modal").hidden) backToReferenceList();
     else if (!document.getElementById("ref-list-modal").hidden) closeModal("ref-list-modal");
