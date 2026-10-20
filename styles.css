@@ -363,7 +363,12 @@ button:disabled {
 
 .modal-actions { margin-top: 16px; }
 
-#captcha-modal { z-index: 40; }
+.save-state {
+  min-height: 1.2em;
+  margin: 12px 0 0;
+  color: var(--teal);
+  font-size: 14px;
+}
 
 .editor-actions .btn { flex: 1 1 auto; }
 

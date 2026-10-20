@@ -47,9 +47,7 @@ const state = {
 
 let lastFocus = null;
 let toastTimer = 0;
-let saveSum = 0;
 let loginSum = 0;
-let pendingSave = null;
 let saveBusy = false;
 let loginBusy = false;
 
@@ -72,6 +70,19 @@ function el(tag, attrs, children) {
     node.append(child instanceof Node ? child : document.createTextNode(String(child)));
   });
   return node;
+}
+
+function setSaveStatus(text) {
+  const node = document.getElementById("answer-save-state");
+  if (!node) return;
+  node.textContent = text || "";
+}
+
+function setSyncNote(text) {
+  const note = document.getElementById("sync-note");
+  if (!note) return;
+  note.hidden = !text;
+  note.textContent = text || "";
 }
 
 function toast(message) {
@@ -272,8 +283,13 @@ const KV_ROOT = "https://keyvalue.immanuel.co/api/KeyVal";
 const KV_URL_BUDGET = 270;
 
 let answerStore = { appKey: "" };
-let remoteStamp = "";
 let syncing = false;
+let catalogMemo = {};
+let catalogStamps = {};
+let catalogsReady = false;
+let remoteReady = false;
+let autosaveTimer = 0;
+let saveAgain = false;
 
 function normalizeEntry(entry) {
   if (!entry || typeof entry !== "object") return null;
@@ -363,7 +379,7 @@ function valueBudget(name) {
 
 function encodeChunks(value, budget) {
   const encoded = encodeB64Url(JSON.stringify(value));
-  const size = Math.min(150, budget);
+  const size = budget;
   if (size < 40) throw new Error("서버 키 이름이 너무 깁니다.");
   const parts = [];
   for (let index = 0; index < encoded.length; index += size) parts.push(encoded.slice(index, index + size));
@@ -390,52 +406,49 @@ async function kvRead(name) {
   return data == null ? "" : String(data);
 }
 
-async function mapPool(items, limit, worker) {
+async function mapLimit(items, limit, worker) {
+  const results = new Array(items.length);
   let cursor = 0;
   async function run() {
     while (cursor < items.length) {
       const index = cursor;
       cursor += 1;
-      await worker(items[index], index);
+      results[index] = await worker(items[index], index);
     }
   }
   const count = Math.min(limit, items.length);
-  const jobs = [];
-  for (let index = 0; index < count; index += 1) jobs.push(run());
-  await Promise.all(jobs);
+  await Promise.all(Array.from({ length: count }, run));
+  return results;
 }
 
 async function writeBlob(baseName, value) {
   const sample = baseName + "0";
   const parts = encodeChunks(value, valueBudget(sample));
-  await mapPool(parts, 4, (part, index) => kvPut(baseName + index, part));
+  await mapLimit(parts, 6, (part, index) => kvPut(baseName + index, part));
   await kvPut(baseName + "n", String(parts.length));
 }
 
 async function readBlob(baseName) {
   const count = Number(await kvRead(baseName + "n")) || 0;
   if (!count) return null;
-  let blob = "";
-  for (let index = 0; index < count; index += 1) blob += await kvRead(baseName + index);
-  if (!blob) return null;
-  return JSON.parse(decodeB64Url(blob));
+  const parts = await mapLimit(
+    Array.from({ length: count }, (value, index) => index),
+    6,
+    (index) => kvRead(baseName + index)
+  );
+  if (parts.some((part) => !part)) return null;
+  return JSON.parse(decodeB64Url(parts.join("")));
 }
 
-async function writeEntry(questionId, authorId, entry) {
-  const payload = entry.deleted
-    ? { d: true, u: entry.updatedAt }
-    : { t: entry.text, u: entry.updatedAt };
-  const base = pairName(questionId, authorId, "p");
-  await writeBlob(base, payload);
-  await kvPut(pairName(questionId, authorId, "u"), timeKey(entry.updatedAt));
-}
-
-async function readEntry(questionId, authorId) {
-  const payload = await readBlob(pairName(questionId, authorId, "p"));
+function payloadToEntry(payload) {
   if (!payload || typeof payload.u !== "string") return null;
   if (payload.d === true) return { text: "", deleted: true, updatedAt: payload.u };
   if (typeof payload.t !== "string") return null;
   return normalizeEntry({ text: payload.t, updatedAt: payload.u });
+}
+
+async function readEntry(questionId, authorId) {
+  return payloadToEntry(await readBlob(pairName(questionId, authorId, "p")));
 }
 
 async function readIndex() {
@@ -444,92 +457,256 @@ async function readIndex() {
   return payload.filter((pair) => Array.isArray(pair) && typeof pair[0] === "string" && typeof pair[1] === "string");
 }
 
-async function writeIndex(pairs) {
-  await writeBlob("i", pairs);
-  await kvPut("iu", timeKey(new Date().toISOString()));
+function catalogBase(authorId) {
+  return "c_" + String(authorId).replace(/[^A-Za-z0-9-]/g, "");
 }
 
-async function ensureIndexed(pairs) {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const current = await readIndex();
+function catalogStampKey(authorId) {
+  return "cs_" + String(authorId).replace(/[^A-Za-z0-9-]/g, "");
+}
+
+function canPublish(authorId) {
+  if (!authorId || authorId === "author-ai") return false;
+  const author = state.authors.find((item) => item.id === authorId);
+  return !author || author.locked !== true;
+}
+
+function cleanCatalogItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items.filter((item) => item && typeof item.q === "string" && typeof item.u === "string");
+}
+
+async function readAuthorCatalog(authorId) {
+  const doc = await readBlob(catalogBase(authorId));
+  if (!doc || !Array.isArray(doc.items)) return [];
+  return cleanCatalogItems(doc.items);
+}
+
+async function readBody(questionId, authorId, chunks) {
+  const count = Number(chunks) || 0;
+  if (!count) return null;
+  const base = pairName(questionId, authorId, "p");
+  const parts = await mapLimit(
+    Array.from({ length: count }, (value, index) => index),
+    6,
+    (index) => kvRead(base + index)
+  );
+  if (parts.some((part) => !part)) return null;
+  return JSON.parse(decodeB64Url(parts.join("")));
+}
+
+async function writeBody(questionId, authorId, entry) {
+  const payload = entry.deleted
+    ? { d: true, u: entry.updatedAt }
+    : { t: entry.text, u: entry.updatedAt };
+  const base = pairName(questionId, authorId, "p");
+  const parts = encodeChunks(payload, valueBudget(base + "0"));
+  await mapLimit(parts, 6, (part, index) => kvPut(base + index, part));
+  return parts.length;
+}
+
+function takeRemoteEntry(questionId, authorId, entry) {
+  if (!entry) return false;
+  const bucket = state.answers[questionId] && state.answers[questionId][authorId];
+  if (bucket && String(bucket.updatedAt || "") >= String(entry.updatedAt)) return false;
+  if (!state.answers[questionId]) state.answers[questionId] = {};
+  state.answers[questionId][authorId] = entry;
+  return true;
+}
+
+async function updateAuthorCatalog(authorId, item) {
+  const base = catalogBase(authorId);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const current = catalogMemo[authorId] || await readAuthorCatalog(authorId);
     const map = new Map();
-    current.forEach((pair) => map.set(pair[0] + "\n" + pair[1], pair));
-    pairs.forEach((pair) => map.set(pair[0] + "\n" + pair[1], pair));
-    await writeIndex(Array.from(map.values()));
-    const verify = await readIndex();
-    const missing = pairs.some((pair) => !verify.some((item) => item[0] === pair[0] && item[1] === pair[1]));
-    if (!missing) {
-      remoteStamp = await kvRead("iu");
-      return;
+    current.forEach((entry) => map.set(entry.q, entry));
+    const prev = map.get(item.q);
+    if (prev && String(prev.u) > String(item.u)) return { remote: prev };
+    if (prev && prev.u === item.u && prev.n === item.n && prev.d === item.d) {
+      catalogMemo[authorId] = current;
+      return { ok: true };
     }
+    map.set(item.q, item);
+    const items = Array.from(map.values());
+    const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    await writeBlob(base, { token: token, items: items });
+    await kvPut(catalogStampKey(authorId), token);
+    catalogMemo[authorId] = items;
+    catalogStamps[authorId] = token;
+    return { ok: true };
   }
   throw new Error("답변 목록을 서버에 반영하지 못했습니다.");
 }
 
+async function publishEntry(questionId, authorId, entry) {
+  const item = entry.deleted
+    ? { q: questionId, u: entry.updatedAt, d: 1 }
+    : { q: questionId, u: entry.updatedAt, n: await writeBody(questionId, authorId, entry) };
+  const result = await updateAuthorCatalog(authorId, item);
+  if (result && result.remote) await adoptRemote(questionId, authorId, result.remote, entry);
+}
+
+async function adoptRemote(questionId, authorId, remoteItem, attempted) {
+  const entry = remoteItem.d
+    ? { text: "", deleted: true, updatedAt: remoteItem.u }
+    : payloadToEntry(await readBody(questionId, authorId, remoteItem.n || 1));
+  if (!entry) return;
+  const box = document.getElementById("answer-modal-text");
+  const editing = box
+    && document.getElementById("answer-modal").hidden === false
+    && box.dataset.question === questionId
+    && state.authorId === authorId;
+  if (editing && box.value.trim() !== (attempted.deleted ? "" : attempted.text)) return;
+  takeRemoteEntry(questionId, authorId, entry);
+  cacheAnswers();
+  if (editing) {
+    box.value = entry.deleted ? "" : entry.text;
+    setSaveStatus("다른 곳에서 저장된 내용으로 맞췄습니다.");
+  }
+  if (!editing) renderBoard();
+}
+
+const authorQueues = new Map();
+
+function enqueueAuthor(authorId, job) {
+  const prev = authorQueues.get(authorId) || Promise.resolve();
+  const next = prev.then(job, job);
+  authorQueues.set(authorId, next);
+  return next;
+}
+
 async function syncEntries(pairs) {
-  const fresh = [];
   for (let index = 0; index < pairs.length; index += 1) {
     const questionId = pairs[index][0];
     const authorId = pairs[index][1];
+    if (!canPublish(authorId)) continue;
     const entry = normalizeEntry(state.answers[questionId] && state.answers[questionId][authorId]);
     if (!entry) continue;
-    const remote = await kvRead(pairName(questionId, authorId, "u"));
-    if (remote && remote > timeKey(entry.updatedAt)) {
-      const newer = await readEntry(questionId, authorId);
-      if (newer) state.answers[questionId][authorId] = newer;
-      continue;
-    }
-    await writeEntry(questionId, authorId, entry);
-    fresh.push([questionId, authorId]);
+    await enqueueAuthor(authorId, () => publishEntry(questionId, authorId, entry));
   }
-  if (fresh.length) await ensureIndexed(fresh);
   cacheAnswers();
 }
 
-async function fetchRemoteAnswers() {
+async function ensureCatalogs() {
+  if (catalogsReady) return;
+  const indexStamp = await kvRead("iu");
+  if (!indexStamp) {
+    catalogsReady = true;
+    return;
+  }
+  const migrated = await kvRead("cm");
+  if (migrated === indexStamp) {
+    catalogsReady = true;
+    return;
+  }
   const pairs = await readIndex();
-  const out = {};
-  await mapPool(pairs, 6, async (pair) => {
-    const entry = await readEntry(pair[0], pair[1]);
-    if (!entry) return;
-    if (!out[pair[0]]) out[pair[0]] = {};
-    out[pair[0]][pair[1]] = entry;
+  const grouped = {};
+  pairs.forEach((pair) => {
+    if (!canPublish(pair[1])) return;
+    if (!grouped[pair[1]]) grouped[pair[1]] = [];
+    grouped[pair[1]].push(pair[0]);
   });
-  return out;
+  const authorIds = Object.keys(grouped);
+  for (let index = 0; index < authorIds.length; index += 1) {
+    const authorId = authorIds[index];
+    const existing = await readAuthorCatalog(authorId);
+    const seen = new Set(existing.map((item) => item.q));
+    const items = existing.slice();
+    for (let cursor = 0; cursor < grouped[authorId].length; cursor += 1) {
+      const questionId = grouped[authorId][cursor];
+      if (seen.has(questionId)) continue;
+      const entry = await readEntry(questionId, authorId);
+      if (!entry) continue;
+      const chunks = Number(await kvRead(pairName(questionId, authorId, "pn"))) || 1;
+      items.push(entry.deleted
+        ? { q: questionId, u: entry.updatedAt, d: 1 }
+        : { q: questionId, u: entry.updatedAt, n: chunks });
+      seen.add(questionId);
+    }
+    if (items.length !== existing.length) {
+      const token = "m" + Date.now().toString(36);
+      await writeBlob(catalogBase(authorId), { token: token, items: items });
+      await kvPut(catalogStampKey(authorId), token);
+      catalogMemo[authorId] = items;
+      catalogStamps[authorId] = token;
+    }
+  }
+  await kvPut("cm", indexStamp);
+  catalogsReady = true;
 }
 
-async function refreshAnswers() {
+async function pullAuthor(authorId) {
+  const stamp = await kvRead(catalogStampKey(authorId));
+  if (stamp === catalogStamps[authorId] && Array.isArray(catalogMemo[authorId])) return false;
+  const items = await readAuthorCatalog(authorId);
+  catalogMemo[authorId] = items;
+  catalogStamps[authorId] = stamp;
+  let changed = false;
+  const jobs = [];
+  items.forEach((item) => {
+    const local = state.answers[item.q] && state.answers[item.q][authorId];
+    if (local && String(local.updatedAt || "") >= String(item.u)) return;
+    if (item.d) {
+      if (takeRemoteEntry(item.q, authorId, { text: "", deleted: true, updatedAt: item.u })) changed = true;
+      return;
+    }
+    jobs.push(async () => {
+      const entry = payloadToEntry(await readBody(item.q, authorId, item.n || 1));
+      return takeRemoteEntry(item.q, authorId, entry);
+    });
+  });
+  const found = await mapLimit(jobs, 6, (job) => job());
+  return changed || found.some(Boolean);
+}
+
+async function healAuthor(authorId) {
+  const items = catalogMemo[authorId] || [];
+  const known = new Map(items.map((item) => [item.q, item]));
+  const bucketIds = Object.keys(state.answers);
+  for (let index = 0; index < bucketIds.length; index += 1) {
+    const questionId = bucketIds[index];
+    const entry = normalizeEntry(state.answers[questionId] && state.answers[questionId][authorId]);
+    if (!entry || !canPublish(authorId)) continue;
+    const remote = known.get(questionId);
+    if (remote && String(remote.u) >= String(entry.updatedAt)) continue;
+    await publishEntry(questionId, authorId, entry);
+  }
+}
+
+async function syncRemote() {
   if (syncing || saveBusy || !answerStore.appKey) return;
   syncing = true;
+  if (!remoteReady) setSyncNote("답변을 불러오는 중");
   try {
-    let changed = false;
-    const authorStamp = await kvRead("aut");
-    if (authorStamp && authorStamp !== state.authorsStamp) {
+    try {
       const remoteAuthors = await readAuthorsRemote();
+      const authorStamp = await kvRead("aut");
       state.authorsStamp = authorStamp;
       if (remoteAuthors && remoteAuthors.updatedAt !== state.authorsUpdatedAt) {
         applyAuthors(remoteAuthors.authors, remoteAuthors.updatedAt);
         renderAuthorSelect();
-        changed = true;
       }
+    } catch (error) {
+      const cached = readStore(STORAGE.authors);
+      const cachedAuthors = cached && normalizeAuthors(cached.authors);
+      if (cachedAuthors) applyAuthors(cachedAuthors, cached.updatedAt || "");
     }
-    const stamp = await kvRead("iu");
-    if (stamp !== remoteStamp) {
-      const remote = await fetchRemoteAnswers();
-      remoteStamp = stamp;
-      const merged = mergeAnswers(state.answers, remote);
-      if (JSON.stringify(merged) !== JSON.stringify(state.answers)) {
-        state.answers = merged;
-        cacheAnswers();
-        changed = true;
-      }
+    await ensureCatalogs();
+    const writers = state.authors.filter((author) => canPublish(author.id));
+    const pulled = await mapLimit(writers, 4, (author) => pullAuthor(author.id));
+    const changed = pulled.some(Boolean);
+    for (let index = 0; index < writers.length; index += 1) {
+      await enqueueAuthor(writers[index].id, () => healAuthor(writers[index].id));
     }
+    cacheAnswers();
     const typing = document.activeElement && document.activeElement.tagName === "TEXTAREA";
     if (changed && !typing) renderBoard();
+    remoteReady = true;
   } catch (error) {
     return;
   } finally {
     syncing = false;
+    setSyncNote("");
   }
 }
 
@@ -579,24 +756,10 @@ async function loadData() {
     throw new Error("data/store.json의 저장소 키를 확인해 주세요.");
   }
   answerStore = storeFile;
-  try {
-    const remoteAuthors = await readAuthorsRemote();
-    state.authorsStamp = await kvRead("aut");
-    if (remoteAuthors) applyAuthors(remoteAuthors.authors, remoteAuthors.updatedAt);
-  } catch (error) {
-    const cached = readStore(STORAGE.authors);
-    const cachedAuthors = cached && normalizeAuthors(cached.authors);
-    if (cachedAuthors) applyAuthors(cachedAuthors, cached.updatedAt || "");
-  }
-  try {
-    const remote = await fetchRemoteAnswers();
-    remoteStamp = await kvRead("iu");
-    state.answers = mergeAnswers(answersFile.answers || {}, remote);
-    cacheAnswers();
-  } catch (error) {
-    state.answers = mergeAnswers(answersFile.answers || {}, readStore(STORAGE.answers) || {});
-    toast("답변 서버에 연결하지 못했습니다. 이전에 이 브라우저에 남은 답변만 보여 줍니다.");
-  }
+  const cachedAuthors = readStore(STORAGE.authors);
+  const cachedAuthorList = cachedAuthors && normalizeAuthors(cachedAuthors.authors);
+  if (cachedAuthorList) applyAuthors(cachedAuthorList, cachedAuthors.updatedAt || "");
+  state.answers = mergeAnswers(answersFile.answers || {}, readStore(STORAGE.answers) || {});
   state.areaId = state.areas[0].id;
   const storedAuthor = readRaw(STORAGE.author) || "";
   state.authorId = state.authors.some((author) => author.id === storedAuthor && author.locked !== true) ? storedAuthor : "";
@@ -810,6 +973,7 @@ function answerDraft(questionId, authorId) {
 function closeAnswerModal() {
   const modal = document.getElementById("answer-modal");
   if (!modal || modal.hidden) return;
+  flushAutosave(false);
   if (document.activeElement && modal.contains(document.activeElement)) document.activeElement.blur();
   modal.hidden = true;
   const adminOpen = !document.getElementById("admin").hidden;
@@ -835,6 +999,7 @@ function openAnswerModal(questionId) {
   const remove = document.getElementById("answer-modal-delete");
   remove.hidden = !hasSaved;
   remove.dataset.question = questionId;
+  setSaveStatus(hasSaved ? "자동 저장됨" : "입력하면 자동으로 저장됩니다.");
   openModal("answer-modal");
   box.focus();
 }
@@ -845,35 +1010,76 @@ function questionField(questionId) {
   return null;
 }
 
-function requestSave(questionId) {
-  if (!state.authorId) {
-    toast("작성자를 먼저 선택해 주세요.");
+function rememberAnswer(questionId, authorId, entry) {
+  if (!state.answers[questionId]) state.answers[questionId] = {};
+  state.answers[questionId][authorId] = entry;
+  if (!state.drafts[questionId]) state.drafts[questionId] = {};
+  state.drafts[questionId][authorId] = entry.deleted ? "" : entry.text;
+  cacheAnswers();
+  const remove = document.getElementById("answer-modal-delete");
+  const box = document.getElementById("answer-modal-text");
+  if (remove && box && box.dataset.question === questionId && state.authorId === authorId) {
+    remove.hidden = !entry.text || entry.deleted;
+  }
+}
+
+function scheduleAutosave() {
+  window.clearTimeout(autosaveTimer);
+  setSaveStatus("입력 중");
+  autosaveTimer = window.setTimeout(() => { flushAutosave(false); }, 700);
+}
+
+async function flushAutosave(manual) {
+  window.clearTimeout(autosaveTimer);
+  const box = document.getElementById("answer-modal-text");
+  const questionId = box && box.dataset.question;
+  const authorId = state.authorId;
+  if (!questionId || !authorId) {
+    if (manual) toast("작성자를 먼저 선택해 주세요.");
     return;
   }
   if (honeypotFilled()) {
     toast("저장하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.");
     return;
   }
-  if (!document.getElementById("captcha-modal").hidden) return;
-  if (!assertCooldown()) return;
-  const field = questionField(questionId);
-  const text = field ? field.value.trim().slice(0, LIMITS.answer) : "";
-  const prev = getAnswer(questionId, state.authorId);
+  if (saveBusy) {
+    saveAgain = true;
+    return;
+  }
+  const text = box.value.trim().slice(0, LIMITS.answer);
+  const prev = state.answers[questionId] && state.answers[questionId][authorId];
+  const prevText = prev && prev.text && !prev.deleted ? prev.text : "";
   if (!text) {
-    if (prev) requestDelete(questionId);
-    else toast("답변을 입력해 주세요.");
+    setSaveStatus(prevText ? "지우려면 삭제를 누르세요." : "입력하면 자동으로 저장됩니다.");
+    if (manual && !prevText) toast("답변을 입력해 주세요.");
     return;
   }
-  if (prev && prev.text === text) {
-    toast("변경된 내용이 없습니다.");
+  if (text === prevText) {
+    setSaveStatus("자동 저장됨");
+    if (manual) toast("변경된 내용이 없습니다.");
     return;
   }
-  if (prev && prev.text !== text) {
-    if (!window.confirm("이미 저장된 답변 전체를 수정합니다. 계속할까요?")) return;
-    if (!assertCooldown()) return;
+  const entry = { text: text, updatedAt: new Date().toISOString() };
+  rememberAnswer(questionId, authorId, entry);
+  renderBoard();
+  setSaveStatus("저장 중…");
+  saveBusy = true;
+  try {
+    await enqueueAuthor(authorId, () => publishEntry(questionId, authorId, entry));
+    const still = document.getElementById("answer-modal-text");
+    const sameBox = still && still.dataset.question === questionId && state.authorId === authorId;
+    if (!sameBox || still.value.trim() === text) setSaveStatus("자동 저장됨");
+    if (manual) toast("답변을 저장했습니다.");
+  } catch (error) {
+    setSaveStatus("저장하지 못했습니다. 다시 시도합니다.");
+    autosaveTimer = window.setTimeout(() => { flushAutosave(false); }, 2500);
+  } finally {
+    saveBusy = false;
+    if (saveAgain) {
+      saveAgain = false;
+      flushAutosave(false);
+    }
   }
-  pendingSave = { questionId: questionId, authorId: state.authorId, text: text };
-  openCaptcha();
 }
 
 async function requestDelete(questionId) {
@@ -882,85 +1088,25 @@ async function requestDelete(questionId) {
     return;
   }
   if (!getAnswer(questionId, state.authorId)) return;
-  if (!assertCooldown()) return;
   if (!window.confirm("이 답변을 삭제합니다. 계속할까요?")) return;
-  if (!assertCooldown()) return;
-  const previous = structuredClone(state.answers[questionId][state.authorId]);
-  state.answers[questionId][state.authorId] = {
-    text: "",
-    deleted: true,
-    updatedAt: new Date().toISOString()
-  };
-  if (state.drafts[questionId]) delete state.drafts[questionId][state.authorId];
+  window.clearTimeout(autosaveTimer);
+  saveAgain = false;
+  const authorId = state.authorId;
+  const previous = structuredClone(state.answers[questionId][authorId]);
+  const entry = { text: "", deleted: true, updatedAt: new Date().toISOString() };
+  rememberAnswer(questionId, authorId, entry);
+  const box = document.getElementById("answer-modal-text");
+  if (box && box.dataset.question === questionId) box.value = "";
+  closeAnswerModal();
+  renderBoard();
   saveBusy = true;
   try {
-    await syncEntries([[questionId, state.authorId]]);
-    stampCooldown();
-    closeAnswerModal();
+    await enqueueAuthor(authorId, () => publishEntry(questionId, authorId, entry));
     toast("답변을 삭제했습니다.");
   } catch (error) {
-    state.answers[questionId][state.authorId] = previous;
+    state.answers[questionId][authorId] = previous;
+    cacheAnswers();
     toast("서버에서 삭제하지 못했습니다. 다시 시도해 주세요.");
-  } finally {
-    saveBusy = false;
-  }
-  renderBoard();
-}
-
-function openCaptcha() {
-  const left = 2 + Math.floor(Math.random() * 8);
-  const right = 2 + Math.floor(Math.random() * 8);
-  saveSum = left + right;
-  document.getElementById("captcha-question").textContent = left + " + " + right + " = ?";
-  const input = document.getElementById("captcha-answer");
-  input.value = "";
-  openModal("captcha-modal");
-  input.focus();
-}
-
-function closeCaptcha() {
-  pendingSave = null;
-  closeModal("captcha-modal");
-}
-
-async function submitCaptcha() {
-  if (saveBusy) return;
-  const typed = document.getElementById("captcha-answer").value.trim();
-  if (typed === "" || Number(typed) !== saveSum) {
-    toast("덧셈 결과가 맞지 않습니다.");
-    openCaptcha();
-    return;
-  }
-  if (!pendingSave) return;
-  if (honeypotFilled()) {
-    toast("저장하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.");
-    closeCaptcha();
-    return;
-  }
-  if (!assertCooldown()) return;
-  saveBusy = true;
-  const questionId = pendingSave.questionId;
-  const authorId = pendingSave.authorId;
-  if (!state.answers[questionId]) state.answers[questionId] = {};
-  const previous = state.answers[questionId][authorId] ? structuredClone(state.answers[questionId][authorId]) : null;
-  state.answers[questionId][authorId] = {
-    text: pendingSave.text,
-    updatedAt: new Date().toISOString()
-  };
-  if (!state.drafts[questionId]) state.drafts[questionId] = {};
-  state.drafts[questionId][authorId] = pendingSave.text;
-  try {
-    await syncEntries([[questionId, authorId]]);
-    stampCooldown();
-    pendingSave = null;
-    closeModal("captcha-modal");
-    closeAnswerModal();
-    toast("답변을 저장했습니다.");
-    renderBoard();
-  } catch (error) {
-    if (previous) state.answers[questionId][authorId] = previous;
-    else delete state.answers[questionId][authorId];
-    toast("서버에 저장하지 못했습니다. 다시 시도해 주세요.");
     renderBoard();
   } finally {
     saveBusy = false;
@@ -1802,6 +1948,7 @@ async function onAdminChange(event) {
 
 function bindEvents() {
   document.getElementById("author-select").addEventListener("change", () => {
+    flushAutosave(false);
     state.authorId = document.getElementById("author-select").value;
     try {
       if (state.authorId) localStorage.setItem(STORAGE.author, state.authorId);
@@ -1828,6 +1975,7 @@ function bindEvents() {
     if (!state.authorId || !box.dataset.question) return;
     if (!state.drafts[box.dataset.question]) state.drafts[box.dataset.question] = {};
     state.drafts[box.dataset.question][state.authorId] = box.value;
+    scheduleAutosave();
   });
 
   document.getElementById("question-list").addEventListener("click", (event) => {
@@ -1839,7 +1987,7 @@ function bindEvents() {
   document.getElementById("answer-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const questionId = document.getElementById("answer-modal-text").dataset.question;
-    if (questionId) requestSave(questionId);
+    if (questionId) flushAutosave(true);
   });
   document.getElementById("answer-modal-close").addEventListener("click", closeAnswerModal);
   document.getElementById("answer-modal-delete").addEventListener("click", () => {
@@ -1870,14 +2018,6 @@ function bindEvents() {
 
   document.getElementById("login-form").addEventListener("submit", submitLogin);
   document.getElementById("login-cancel").addEventListener("click", () => closeModal("login-modal"));
-  document.getElementById("captcha-cancel").addEventListener("click", closeCaptcha);
-  document.getElementById("captcha-submit").addEventListener("click", submitCaptcha);
-  document.getElementById("captcha-answer").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      submitCaptcha();
-    }
-  });
   document.getElementById("ref-fab").addEventListener("click", openReferenceList);
   document.getElementById("ref-list-close").addEventListener("click", () => closeModal("ref-list-modal"));
   document.getElementById("ref-list-body").addEventListener("click", (event) => {
@@ -1892,8 +2032,7 @@ function bindEvents() {
   document.querySelectorAll(".modal").forEach((modal) => {
     modal.addEventListener("click", (event) => {
       if (event.target !== modal) return;
-      if (modal.id === "captcha-modal") closeCaptcha();
-      else if (modal.id === "ref-modal") closeAllReferenceModals();
+      if (modal.id === "ref-modal") closeAllReferenceModals();
       else if (modal.id === "ref-list-modal") closeModal("ref-list-modal");
       else closeModal(modal.id);
     });
@@ -1901,8 +2040,7 @@ function bindEvents() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (!document.getElementById("captcha-modal").hidden) closeCaptcha();
-    else if (!document.getElementById("answer-modal").hidden) closeAnswerModal();
+    if (!document.getElementById("answer-modal").hidden) closeAnswerModal();
     else if (!document.getElementById("login-modal").hidden) closeModal("login-modal");
     else if (!document.getElementById("ref-modal").hidden) backToReferenceList();
     else if (!document.getElementById("ref-list-modal").hidden) closeModal("ref-list-modal");
@@ -1937,9 +2075,12 @@ async function init() {
     updateAdminButton();
     updateCooldownUI();
     window.setInterval(updateCooldownUI, 500);
-    window.setInterval(refreshAnswers, 20000);
+    syncRemote();
+    window.setInterval(() => {
+      if (document.visibilityState === "visible") syncRemote();
+    }, 12000);
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") refreshAnswers();
+      if (document.visibilityState === "visible") syncRemote();
     });
   } catch (error) {
     showFatal(error && error.message ? error.message : "데이터를 불러오지 못했습니다.");

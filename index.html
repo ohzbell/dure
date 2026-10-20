@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f4efe6">
   <title>두레중 면접 준비</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
   <a class="skip" href="#main">본문으로 건너뛰기</a>
@@ -35,7 +35,8 @@
         </div>
       </div>
     </header>
-    <p class="notice">답변은 서버에 저장됩니다. 이 주소로 들어오면 같은 답변을 봅니다.</p>
+    <p class="notice">답변은 입력하는 동안 자동으로 저장됩니다. 이 주소로 들어오면 같은 답변을 봅니다.</p>
+    <p class="hint" id="sync-note" hidden></p>
     <div class="data-tools">
       <button type="button" class="btn btn-ghost" id="export-answers">답변 내려받기</button>
       <button type="button" class="btn btn-ghost" id="import-answers">답변 불러오기</button>
@@ -68,28 +69,13 @@
       <label class="field" for="answer-modal-text">답변
         <textarea id="answer-modal-text" class="textarea" rows="8" maxlength="8000" autocomplete="off"></textarea>
       </label>
+      <p class="save-state" id="answer-save-state" role="status"></p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="answer-modal-close">닫기</button>
-        <button type="button" class="btn btn-danger" id="answer-modal-delete" data-guard="cooldown" hidden>삭제</button>
-        <button type="submit" class="btn btn-primary" id="answer-modal-save" data-guard="cooldown">저장</button>
+        <button type="button" class="btn btn-danger" id="answer-modal-delete" hidden>삭제</button>
+        <button type="submit" class="btn btn-primary" id="answer-modal-save">저장</button>
       </div>
     </form>
-  </div>
-
-  <div id="captcha-modal" class="modal" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="captcha-title">
-      <p class="eyebrow">확인</p>
-      <h2 id="captcha-title">저장 전 덧셈 확인</h2>
-      <p class="muted">자동 입력과 도배를 거르기 위한 짧은 확인입니다.</p>
-      <p id="captcha-question" class="captcha-q"></p>
-      <label class="field" for="captcha-answer">정답
-        <input id="captcha-answer" inputmode="numeric" autocomplete="off">
-      </label>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="captcha-cancel">취소</button>
-        <button type="button" class="btn btn-primary" id="captcha-submit">확인 후 저장</button>
-      </div>
-    </div>
   </div>
 
   <div id="ref-list-modal" class="modal" hidden>
@@ -155,6 +141,6 @@
   </section>
   <p id="toast" class="toast" role="status" aria-live="polite"></p>
   <noscript><p class="notice">이 보드는 자바스크립트가 필요합니다.</p></noscript>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
