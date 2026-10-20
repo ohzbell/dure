@@ -11,6 +11,7 @@ const STORAGE = {
   answers: "dure.answers.v1",
   content: "dure.content.v1",
   author: "dure.author.v1",
+  authors: "dure.authors.v1",
   cooldown: "dure.cooldown.v1"
 };
 const SESSION_KEY = "dure.admin.session.v1";
@@ -38,6 +39,8 @@ const state = {
   authorId: "",
   isAdmin: false,
   showAiAnswers: true,
+  authorsUpdatedAt: "",
+  authorsStamp: "",
   files: { revision: 1, areas: [], references: [] },
   cooldownUntil: 0
 };
@@ -499,16 +502,30 @@ async function refreshAnswers() {
   if (syncing || saveBusy || !answerStore.appKey) return;
   syncing = true;
   try {
+    let changed = false;
+    const authorStamp = await kvRead("aut");
+    if (authorStamp && authorStamp !== state.authorsStamp) {
+      const remoteAuthors = await readAuthorsRemote();
+      state.authorsStamp = authorStamp;
+      if (remoteAuthors && remoteAuthors.updatedAt !== state.authorsUpdatedAt) {
+        applyAuthors(remoteAuthors.authors, remoteAuthors.updatedAt);
+        renderAuthorSelect();
+        changed = true;
+      }
+    }
     const stamp = await kvRead("iu");
-    if (stamp === remoteStamp) return;
-    const remote = await fetchRemoteAnswers();
-    remoteStamp = stamp;
-    const merged = mergeAnswers(state.answers, remote);
-    if (JSON.stringify(merged) === JSON.stringify(state.answers)) return;
-    state.answers = merged;
-    cacheAnswers();
+    if (stamp !== remoteStamp) {
+      const remote = await fetchRemoteAnswers();
+      remoteStamp = stamp;
+      const merged = mergeAnswers(state.answers, remote);
+      if (JSON.stringify(merged) !== JSON.stringify(state.answers)) {
+        state.answers = merged;
+        cacheAnswers();
+        changed = true;
+      }
+    }
     const typing = document.activeElement && document.activeElement.tagName === "TEXTAREA";
-    if (!typing) renderBoard();
+    if (changed && !typing) renderBoard();
   } catch (error) {
     return;
   } finally {
@@ -531,13 +548,12 @@ async function loadData() {
   let answersFile = { answers: {} };
   try { answersFile = await fetchJson("data/answers.json"); } catch (error) { answersFile = { answers: {} }; }
 
-  if (!authorsFile || !Array.isArray(authorsFile.authors) || authorsFile.authors.length === 0) {
-    throw new Error("data/authors.json에 작성자가 없습니다.");
-  }
   if (!isQuestionFile(questionsFile)) throw new Error("data/questions.json 형식을 확인해 주세요.");
   if (!isReferenceFile(referencesFile)) throw new Error("data/references.json 형식을 확인해 주세요.");
 
-  state.authors = authorsFile.authors;
+  const fileAuthors = normalizeAuthors(authorsFile.authors);
+  if (!fileAuthors) throw new Error("data/authors.json에 작성자가 없습니다.");
+  state.authors = fileAuthors;
   state.files = {
     revision: Math.max(Number(questionsFile.revision) || 1, Number(referencesFile.revision) || 1),
     areas: structuredClone(questionsFile.areas),
@@ -563,6 +579,15 @@ async function loadData() {
     throw new Error("data/store.json의 저장소 키를 확인해 주세요.");
   }
   answerStore = storeFile;
+  try {
+    const remoteAuthors = await readAuthorsRemote();
+    state.authorsStamp = await kvRead("aut");
+    if (remoteAuthors) applyAuthors(remoteAuthors.authors, remoteAuthors.updatedAt);
+  } catch (error) {
+    const cached = readStore(STORAGE.authors);
+    const cachedAuthors = cached && normalizeAuthors(cached.authors);
+    if (cachedAuthors) applyAuthors(cachedAuthors, cached.updatedAt || "");
+  }
   try {
     const remote = await fetchRemoteAnswers();
     remoteStamp = await kvRead("iu");
@@ -626,6 +651,56 @@ function updateAdminButton() {
   const toggle = document.getElementById("ai-toggle");
   toggle.hidden = !state.isAdmin;
   document.getElementById("ai-toggle-input").checked = state.showAiAnswers !== false;
+}
+
+function normalizeAuthors(list) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const ids = new Set();
+  const authors = [];
+  for (let index = 0; index < list.length; index += 1) {
+    const item = list[index];
+    if (!item || typeof item.id !== "string" || !/^[A-Za-z0-9-]{1,40}$/.test(item.id)) return null;
+    if (ids.has(item.id)) return null;
+    if (typeof item.name !== "string") return null;
+    const name = item.name.trim().slice(0, 20);
+    if (!name) return null;
+    ids.add(item.id);
+    const author = { id: item.id, name: name };
+    if (item.locked === true) author.locked = true;
+    authors.push(author);
+  }
+  return authors;
+}
+
+function cacheAuthors() {
+  writeStore(STORAGE.authors, { updatedAt: state.authorsUpdatedAt, authors: state.authors });
+}
+
+async function readAuthorsRemote() {
+  const payload = await readBlob("au");
+  if (!payload) return null;
+  const authors = normalizeAuthors(payload.authors);
+  if (!authors) return null;
+  return { authors: authors, updatedAt: typeof payload.updatedAt === "string" ? payload.updatedAt : "" };
+}
+
+async function persistAuthors() {
+  state.authorsUpdatedAt = new Date().toISOString();
+  cacheAuthors();
+  await writeBlob("au", { authors: state.authors, updatedAt: state.authorsUpdatedAt });
+  const stamp = timeKey(state.authorsUpdatedAt);
+  await kvPut("aut", stamp);
+  state.authorsStamp = stamp;
+}
+
+function applyAuthors(authors, updatedAt) {
+  state.authors = authors;
+  state.authorsUpdatedAt = updatedAt || "";
+  if (state.authorId && !authors.some((author) => author.id === state.authorId && author.locked !== true)) {
+    state.authorId = "";
+    try { localStorage.removeItem(STORAGE.author); } catch (error) { /* ignore */ }
+  }
+  cacheAuthors();
 }
 
 function writableAuthors() {
@@ -897,16 +972,29 @@ function areaReferences() {
   return state.references.filter((item) => item.areaId === area.id);
 }
 
+function refSortKey(ref) {
+  const match = String(ref && ref.title || "").match(/^(\d+)(?:-(\d+))?/);
+  if (!match) return 100000;
+  return Number(match[1]) * 100 + Number(match[2] || 0);
+}
+
+function sortedReferences() {
+  return state.references.slice().sort((left, right) => {
+    const gap = refSortKey(left) - refSortKey(right);
+    if (gap) return gap;
+    return String(left.title).localeCompare(String(right.title), "ko");
+  });
+}
+
 function updateRefFab() {
   const button = document.getElementById("ref-fab");
   const badge = document.getElementById("ref-fab-count");
   if (!button || !badge) return;
-  const count = areaReferences().length;
-  const area = currentArea();
+  const count = sortedReferences().length;
   button.classList.toggle("is-empty", count === 0);
   button.setAttribute("aria-label", count
-    ? (area.title || "이 영역") + " 참조 " + count + "개 열기"
-    : "이 영역에 등록된 참조가 없습니다");
+    ? "참고 자료 " + count + "개 열기"
+    : "등록된 참고 자료가 없습니다");
   if (count) {
     badge.hidden = false;
     badge.textContent = String(count);
@@ -920,16 +1008,15 @@ function renderReferences() {
 }
 
 function openReferenceList() {
-  const refs = areaReferences();
-  const area = currentArea();
+  const refs = sortedReferences();
   const body = document.getElementById("ref-list-body");
   const note = document.getElementById("ref-list-note");
-  document.getElementById("ref-list-title").textContent = (area.title || "이 영역") + " 자료";
+  document.getElementById("ref-list-title").textContent = "참고 자료";
   if (!refs.length) {
-    note.textContent = "이 영역에 등록된 참조가 없습니다.";
+    note.textContent = "등록된 참고 자료가 없습니다.";
     body.replaceChildren(el("p", { class: "empty", text: "관리자가 자료를 올리면 여기에 나타납니다." }));
   } else {
-    note.textContent = "읽을 자료를 고르세요.";
+    note.textContent = "번호 순서입니다. 읽을 자료를 고르세요.";
     body.replaceChildren(...refs.map((ref) => {
       return el("button", {
         type: "button",
@@ -1122,10 +1209,23 @@ function renderAdmin() {
       class: state.adminTab === "references" ? "btn btn-primary" : "btn btn-ghost",
       "data-action": "show-references",
       text: "참조"
+    }),
+    el("button", {
+      type: "button",
+      class: state.adminTab === "authors" ? "btn btn-primary" : "btn btn-ghost",
+      "data-action": "show-authors",
+      text: "작성자"
     })
   ]);
-  const panel = state.adminTab === "references" ? renderAdminReferences(area) : renderAdminQuestions(area);
-  root.replaceChildren(tools, el("label", { class: "field" }, ["다룰 영역", areaSelect]), switcher, panel);
+  const panel = state.adminTab === "authors"
+    ? renderAdminAuthors()
+    : state.adminTab === "references" ? renderAdminReferences(area) : renderAdminQuestions(area);
+  root.replaceChildren(
+    tools,
+    state.adminTab === "authors" ? null : el("label", { class: "field" }, ["다룰 영역", areaSelect]),
+    switcher,
+    panel
+  );
   updateCooldownUI();
 }
 
@@ -1200,6 +1300,122 @@ function renderAdminReferences(area) {
     ...cards,
     addForm
   ]);
+}
+
+function renderAdminAuthors() {
+  const cards = state.authors.map((author) => {
+    const name = el("input", { name: "name", maxlength: "20", required: true });
+    name.value = author.name;
+    return el("form", { class: "admin-card stack", "data-action": "save-author", "data-id": author.id }, [
+      el("h3", { text: author.locked ? author.name + " · 보기 전용" : author.name }),
+      el("label", { class: "field" }, ["이름", name]),
+      el("div", { class: "row" }, [
+        el("button", { type: "submit", class: "btn btn-primary", "data-guard": "cooldown", text: "이름 수정" }),
+        el("button", { type: "button", class: "btn btn-danger", "data-action": "delete-author", "data-id": author.id, "data-guard": "cooldown", text: "삭제" })
+      ])
+    ]);
+  });
+  const addName = el("input", { name: "name", maxlength: "20", required: true });
+  const addForm = el("form", { class: "admin-card stack", "data-action": "add-author" }, [
+    el("h3", { text: "작성자 추가" }),
+    el("label", { class: "field" }, ["이름", addName]),
+    el("button", { type: "submit", class: "btn btn-primary", "data-guard": "cooldown", text: "작성자 추가" })
+  ]);
+  return el("div", { class: "stack" }, [
+    el("p", { class: "hint", text: "삭제하면 그 작성자는 보기 화면과 작성자 선택에서 사라집니다. AI 작성자를 지우면 모범 답변 카드도 보이지 않습니다." }),
+    ...cards,
+    addForm
+  ]);
+}
+
+async function saveAuthor(form) {
+  if (!(await requireAdmin())) return;
+  const author = state.authors.find((item) => item.id === form.dataset.id);
+  if (!author) return;
+  const name = String(new FormData(form).get("name") || "").trim().slice(0, 20);
+  if (!name) {
+    toast("이름을 입력해 주세요.");
+    return;
+  }
+  if (name === author.name) {
+    toast("변경된 내용이 없습니다.");
+    return;
+  }
+  if (!assertCooldown()) return;
+  const previous = author.name;
+  author.name = name;
+  try {
+    await persistAuthors();
+  } catch (error) {
+    author.name = previous;
+    toast("서버에 반영하지 못했습니다. 다시 시도해 주세요.");
+    return;
+  }
+  stampCooldown();
+  toast("작성자 이름을 수정했습니다.");
+  renderAuthorSelect();
+  renderBoard();
+  renderAdmin();
+}
+
+async function addAuthor(form) {
+  if (!(await requireAdmin())) return;
+  const name = String(new FormData(form).get("name") || "").trim().slice(0, 20);
+  if (!name) {
+    toast("이름을 입력해 주세요.");
+    return;
+  }
+  if (state.authors.length >= 12) {
+    toast("작성자는 12명까지 둘 수 있습니다.");
+    return;
+  }
+  if (!assertCooldown()) return;
+  const previous = state.authors.slice();
+  state.authors = previous.concat([{ id: uid("author"), name: name }]);
+  try {
+    await persistAuthors();
+  } catch (error) {
+    state.authors = previous;
+    toast("서버에 반영하지 못했습니다. 다시 시도해 주세요.");
+    return;
+  }
+  stampCooldown();
+  toast("작성자를 추가했습니다.");
+  renderAuthorSelect();
+  renderBoard();
+  renderAdmin();
+}
+
+async function deleteAuthor(id) {
+  if (!(await requireAdmin())) return;
+  const author = state.authors.find((item) => item.id === id);
+  if (!author) return;
+  if (state.authors.length <= 1) {
+    toast("작성자는 한 명은 남겨 주세요.");
+    return;
+  }
+  if (!window.confirm(author.name + " 작성자를 삭제합니다. 보기 화면에서 사라집니다. 계속할까요?")) return;
+  if (!assertCooldown()) return;
+  const previous = state.authors.slice();
+  const previousId = state.authorId;
+  state.authors = previous.filter((item) => item.id !== id);
+  if (state.authorId === id) state.authorId = "";
+  try {
+    await persistAuthors();
+  } catch (error) {
+    state.authors = previous;
+    state.authorId = previousId;
+    toast("서버에 반영하지 못해 삭제하지 않았습니다.");
+    return;
+  }
+  if (!state.authorId) {
+    try { localStorage.removeItem(STORAGE.author); } catch (error) { /* ignore */ }
+  }
+  stampCooldown();
+  toast("작성자를 삭제했습니다. 보기 화면에서 숨깁니다.");
+  renderAuthorSelect();
+  renderBoard();
+  renderAdmin();
 }
 
 async function saveArea(form) {
@@ -1519,6 +1735,11 @@ async function onAdminClick(event) {
     renderAdmin();
     return;
   }
+  if (action === "show-authors") {
+    state.adminTab = "authors";
+    renderAdmin();
+    return;
+  }
   if (action === "export-questions") {
     downloadJson("questions.json", { revision: state.files.revision, areas: state.areas });
     return;
@@ -1543,6 +1764,7 @@ async function onAdminClick(event) {
   }
   if (action === "delete-question") await deleteQuestion(button.dataset.id);
   if (action === "delete-reference") await deleteReference(button.dataset.id);
+  if (action === "delete-author") await deleteAuthor(button.dataset.id);
 }
 
 async function onAdminSubmit(event) {
@@ -1555,6 +1777,8 @@ async function onAdminSubmit(event) {
   else if (action === "add-question") await addQuestion(form);
   else if (action === "save-reference") await saveReference(form);
   else if (action === "add-reference") await addReference(form);
+  else if (action === "save-author") await saveAuthor(form);
+  else if (action === "add-author") await addAuthor(form);
 }
 
 async function onAdminChange(event) {
