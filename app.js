@@ -14,6 +14,7 @@ const STORAGE = {
   cooldown: "dure.cooldown.v1"
 };
 const SESSION_KEY = "dure.admin.session.v1";
+const AI_VISIBLE_KEY = "dure.admin.aiVisible.v1";
 const LOGIN_LOCK_KEY = "dure.admin.lock.v1";
 
 const LIMITS = {
@@ -36,6 +37,7 @@ const state = {
   adminTab: "questions",
   authorId: "",
   isAdmin: false,
+  showAiAnswers: true,
   files: { revision: 1, areas: [], references: [] },
   cooldownUntil: 0
 };
@@ -607,8 +609,23 @@ function showFatal(message) {
   document.getElementById("question-list").replaceChildren(el("p", { class: "empty", text: message }));
 }
 
+function aiAnswersVisible() {
+  return !state.isAdmin || state.showAiAnswers !== false;
+}
+
+function readAiVisibility() {
+  try {
+    return sessionStorage.getItem(AI_VISIBLE_KEY) !== "0";
+  } catch (error) {
+    return true;
+  }
+}
+
 function updateAdminButton() {
-  document.getElementById("admin-open").textContent = state.isAdmin ? "관리 화면" : "관리";
+  document.getElementById("admin-open").textContent = state.isAdmin ? "관리 화면" : "관리자 로그인";
+  const toggle = document.getElementById("ai-toggle");
+  toggle.hidden = !state.isAdmin;
+  document.getElementById("ai-toggle-input").checked = state.showAiAnswers !== false;
 }
 
 function writableAuthors() {
@@ -669,7 +686,7 @@ function renderQuestions() {
 
 function renderQuestion(question, index, author) {
   const saved = state.answers[question.id] || {};
-  const blocks = state.authors.map((person) => {
+  const blocks = state.authors.filter((person) => person.locked !== true || aiAnswersVisible()).map((person) => {
     const raw = saved[person.id];
     const entry = raw && raw.text && !raw.deleted ? raw : null;
     const text = entry ? entry.text : "아직 답변이 없습니다.";
@@ -994,6 +1011,7 @@ async function submitLogin(event) {
     document.getElementById("login-password").value = "";
     closeModal("login-modal");
     updateAdminButton();
+    renderBoard();
     openAdmin();
   } catch (error) {
     toast("이 페이지는 https 또는 localhost에서 열어 주세요.");
@@ -1560,10 +1578,19 @@ function bindEvents() {
     if (button.dataset.action === "delete") requestDelete(button.dataset.question);
   });
 
+  document.getElementById("ai-toggle-input").addEventListener("change", (event) => {
+    if (!state.isAdmin) return;
+    state.showAiAnswers = event.target.checked;
+    try { sessionStorage.setItem(AI_VISIBLE_KEY, state.showAiAnswers ? "1" : "0"); } catch (error) { /* ignore */ }
+    renderBoard();
+    toast(state.showAiAnswers ? "AI 답변을 표시합니다." : "AI 답변을 숨겼습니다.");
+  });
+
   document.getElementById("admin-open").addEventListener("click", async () => {
     if (await readSession()) {
       state.isAdmin = true;
       updateAdminButton();
+      renderBoard();
       openAdmin();
       return;
     }
@@ -1634,6 +1661,7 @@ async function init() {
   try {
     await loadData();
     state.isAdmin = await readSession();
+    state.showAiAnswers = readAiVisibility();
     renderAuthorSelect();
     renderBoard();
     updateAdminButton();
