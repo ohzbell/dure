@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#f4efe6">
+  <title>DURE 작업 보드</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,640&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+  <div class="hp" aria-hidden="true">
+    <label for="fax_number">Fax</label>
+    <input id="fax_number" name="fax_number" type="text" tabindex="-1" autocomplete="off">
+  </div>
+  <div class="wrap">
+    <header class="top">
+      <div class="brand">
+        <p class="eyebrow">DURE</p>
+        <h1>작업 보드</h1>
+        <p class="lede">다섯 영역의 질문에, 네 명의 작성자가 로그인 없이 자기 이름을 고르고 답합니다.</p>
+      </div>
+      <div class="top-actions">
+        <label class="field" for="author-select">작성자
+          <select id="author-select"></select>
+        </label>
+        <button type="button" class="btn btn-ghost" id="admin-open">관리</button>
+      </div>
+    </header>
+    <p class="notice">답변은 이 브라우저에 저장됩니다. 다른 사람과 맞추려면 답변 파일을 내려받아 주고받으세요.</p>
+    <div class="data-tools">
+      <button type="button" class="btn btn-ghost" id="export-answers">답변 내려받기</button>
+      <button type="button" class="btn btn-ghost" id="import-answers">답변 불러오기</button>
+      <input id="import-answers-file" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p class="cooldown" id="cooldown-note" role="status"></p>
+    <nav id="area-tabs" class="tabs" role="tablist" aria-label="영역"></nav>
+    <main id="main" class="layout">
+      <section id="question-list" class="questions" aria-live="polite"></section>
+      <aside id="reference-panel" class="aside"></aside>
+    </main>
+  </div>
+
+  <div id="captcha-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="captcha-title">
+      <p class="eyebrow">확인</p>
+      <h2 id="captcha-title">저장 전 덧셈 확인</h2>
+      <p class="muted">자동 입력과 도배를 거르기 위한 짧은 확인입니다.</p>
+      <p id="captcha-question" class="captcha-q"></p>
+      <label class="field" for="captcha-answer">정답
+        <input id="captcha-answer" inputmode="numeric" autocomplete="off">
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="captcha-cancel">취소</button>
+        <button type="button" class="btn btn-primary" id="captcha-submit">확인 후 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ref-modal" class="modal" hidden>
+    <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="ref-modal-title">
+      <p class="eyebrow">참조</p>
+      <h2 id="ref-modal-title">선택한 자료</h2>
+      <div id="ref-modal-body"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="ref-modal-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="login-modal" class="modal" hidden>
+    <form class="modal-card" id="login-form" role="dialog" aria-modal="true" aria-labelledby="login-title">
+      <p class="eyebrow">관리자</p>
+      <h2 id="login-title">관리 모드</h2>
+      <p class="muted">질문과 참조를 고치려면 관리자 계정으로 들어가세요.</p>
+      <label class="field" for="login-id">아이디
+        <input id="login-id" name="username" autocomplete="username" required>
+      </label>
+      <label class="field" for="login-password">비밀번호
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <label class="field" for="login-captcha">덧셈 정답
+        <span id="login-captcha-label"></span>
+        <input id="login-captcha" inputmode="numeric" autocomplete="off" required>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="login-cancel">취소</button>
+        <button type="submit" class="btn btn-primary">들어가기</button>
+      </div>
+    </form>
+  </div>
+
+  <section id="admin" class="admin" hidden>
+    <div class="admin-inner">
+      <header class="admin-bar">
+        <div>
+          <p class="eyebrow">관리</p>
+          <h2>질문과 참조</h2>
+        </div>
+        <div class="row">
+          <button type="button" class="btn btn-ghost" id="admin-close">보드로</button>
+          <button type="button" class="btn btn-ghost" id="admin-logout">로그아웃</button>
+        </div>
+      </header>
+      <div id="admin-root"></div>
+    </div>
+  </section>
+  <p id="toast" class="toast" role="status" aria-live="polite"></p>
+  <noscript><p class="notice">이 보드는 자바스크립트가 필요합니다.</p></noscript>
+  <script src="app.js"></script>
+</body>
+</html>
