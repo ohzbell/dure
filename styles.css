@@ -94,6 +94,18 @@ button:disabled {
   padding-bottom: var(--fab-space);
 }
 
+.db-ok {
+  display: inline-block;
+  margin: 10px 0 0;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: #e5f3f1;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .top {
   display: flex;
   flex-direction: column;

@@ -85,6 +85,12 @@ function setSyncNote(text) {
   note.textContent = text || "";
 }
 
+function setDbStatus(ok) {
+  const node = document.getElementById("db-ok");
+  if (!node) return;
+  node.hidden = !ok;
+}
+
 function toast(message) {
   const node = document.getElementById("toast");
   node.textContent = message;
@@ -466,7 +472,9 @@ async function syncRemote() {
     if (changed && !typing) renderBoard();
     remoteReady = true;
     setSyncNote("");
+    setDbStatus(true);
   } catch (error) {
+    setDbStatus(false);
     setSyncNote("서버에 연결하지 못했습니다. 잠시 후 다시 시도합니다.");
   } finally {
     syncing = false;
