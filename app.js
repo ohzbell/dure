@@ -1824,6 +1824,16 @@ function downloadPdf() {
       ]));
     });
   });
+  const refs = sortedReferences();
+  if (refs.length) {
+    blocks.push(el("h2", { text: "참조 자료" }));
+    refs.forEach((ref) => {
+      blocks.push(el("section", { class: "ref-block" }, [
+        el("p", { class: "q", text: ref.title }),
+        el("p", { class: "a", text: ref.body || "" })
+      ]));
+    });
+  }
   root.replaceChildren(...blocks);
   const previousTitle = document.title;
   document.title = "두레중 면접 준비-" + author.name;

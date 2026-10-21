@@ -421,6 +421,8 @@ button:disabled {
   }
 
   .print-root .q { font-weight: 700; margin-bottom: 2pt; }
+
+  .print-root .ref-block { margin: 0 0 10pt; }
 }
 
 .answers {
