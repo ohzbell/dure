@@ -12,7 +12,8 @@ const STORAGE = {
   content: "dure.content.v1",
   author: "dure.author.v1",
   authors: "dure.authors.v1",
-  cooldown: "dure.cooldown.v1"
+  cooldown: "dure.cooldown.v1",
+  answerFont: "dure.answerFont.v1"
 };
 const SESSION_KEY = "dure.admin.session.v1";
 const AI_VISIBLE_KEY = "dure.admin.aiVisible.v1";
@@ -27,12 +28,15 @@ const LIMITS = {
   refBody: 20000
 };
 
+const FONT_SIZES = [14, 16, 18, 20, 24, 28];
+
 const state = {
   authors: [],
   areas: [],
   references: [],
   answers: {},
   drafts: {},
+  hidden: [],
   areaId: "",
   adminAreaId: "",
   adminTab: "questions",
@@ -282,7 +286,7 @@ function findQuestion(id) {
 
 function answeredCount(area) {
   if (!state.authorId) return 0;
-  return area.questions.filter((question) => getAnswer(question.id, state.authorId)).length;
+  return visibleQuestions(area).filter((question) => getAnswer(question.id, state.authorId)).length;
 }
 
 let answerStore = { endpoint: "", key: "" };
@@ -372,6 +376,27 @@ async function boardRequest(method, body) {
   return data;
 }
 
+function hiddenKey(list) {
+  return cleanHidden(list).join("\n");
+}
+
+function cleanHidden(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((id) => typeof id === "string" && /^[A-Za-z0-9-]{1,80}$/.test(id)).sort();
+}
+
+function isHidden(questionId) {
+  return state.hidden.indexOf(questionId) !== -1;
+}
+
+function visibleQuestions(area) {
+  return (area.questions || []).filter((question) => !isHidden(question.id));
+}
+
+function stripRetiredAreas(areas) {
+  return (areas || []).filter((area) => area && area.id !== "area-4");
+}
+
 function answersKey(answers) {
   const lines = [];
   Object.keys(answers).sort().forEach((questionId) => {
@@ -424,8 +449,9 @@ function applySnapshot(doc) {
       next[questionId][authorId] = local;
     }
   }
-  const changed = authorsChanged || answersKey(state.answers) !== answersKey(next);
+  const changed = authorsChanged || answersKey(state.answers) !== answersKey(next) || hiddenKey(state.hidden) !== hiddenKey(doc.hidden);
   state.answers = next;
+  state.hidden = cleanHidden(doc.hidden);
   cacheAnswers();
   return changed;
 }
@@ -505,14 +531,14 @@ async function loadData() {
   state.authors = fileAuthors;
   state.files = {
     revision: Math.max(Number(questionsFile.revision) || 1, Number(referencesFile.revision) || 1),
-    areas: structuredClone(questionsFile.areas),
+    areas: stripRetiredAreas(structuredClone(questionsFile.areas)),
     references: structuredClone(referencesFile.references)
   };
 
   const draft = readStore(STORAGE.content);
   const draftOk = draft && Number(draft.revision) >= state.files.revision && isQuestionFile({ areas: draft.areas }) && isReferenceFile({ references: draft.references });
   if (draftOk) {
-    state.areas = draft.areas;
+    state.areas = stripRetiredAreas(draft.areas);
     state.references = draft.references;
   } else {
     state.areas = structuredClone(state.files.areas);
@@ -675,7 +701,7 @@ function renderTabs() {
       "data-area": area.id
     }, [
       el("span", { text: area.title }),
-      el("span", { class: "tab-count", text: answeredCount(area) + "/" + area.questions.length })
+      el("span", { class: "tab-count", text: answeredCount(area) + "/" + visibleQuestions(area).length })
     ]);
   }));
 }
@@ -688,9 +714,24 @@ function renderQuestions() {
     el("h2", { text: area.title }),
     area.summary ? el("p", { class: "muted", text: area.summary }) : null
   ]);
-  const cards = area.questions.map((question, index) => renderQuestion(question, index, author));
-  root.replaceChildren(head, ...cards);
-  if (!area.questions.length) {
+  const questions = visibleQuestions(area);
+  const cards = questions.map((question, index) => renderQuestion(question, index, author));
+  const hidden = area.questions.filter((question) => isHidden(question.id));
+  const hiddenBlock = hidden.length ? el("div", { class: "hidden-questions" }, [
+    el("p", { class: "hint", text: "숨긴 질문 " + hidden.length + "개. 문제 수에는 들어가지 않습니다." }),
+    ...hidden.map((question) => el("div", { class: "hidden-row" }, [
+      el("p", { text: question.text }),
+      el("button", {
+        type: "button",
+        class: "btn btn-ghost",
+        "data-action": "show-question",
+        "data-question": question.id,
+        text: "보이기"
+      })
+    ]))
+  ]) : null;
+  root.replaceChildren(head, ...cards, hiddenBlock);
+  if (!questions.length && !hidden.length) {
     root.append(el("p", { class: "empty", text: "이 영역에는 아직 질문이 없습니다." }));
   }
 }
@@ -721,6 +762,13 @@ function renderQuestion(question, index, author) {
           "data-action": "write",
           "data-question": question.id,
           text: "답변작성"
+        }),
+        el("button", {
+          type: "button",
+          class: "btn btn-ghost",
+          "data-action": "hide-question",
+          "data-question": question.id,
+          text: "숨기기"
         })
       ]),
       el("div", { class: "answers" }, blocks)
@@ -773,6 +821,7 @@ function openAnswerModal(questionId) {
   remove.hidden = !hasSaved;
   remove.dataset.question = questionId;
   setSaveStatus(hasSaved ? "자동 저장됨" : "입력하면 자동으로 저장됩니다.");
+  applyAnswerFont();
   openModal("answer-modal");
   box.focus();
 }
@@ -1170,7 +1219,13 @@ function renderAdminQuestions(area) {
       el("label", { class: "field" }, ["영역", select]),
       el("div", { class: "row" }, [
         el("button", { type: "submit", class: "btn btn-primary", "data-guard": "cooldown", text: "수정 저장" }),
-        el("button", { type: "button", class: "btn btn-danger", "data-action": "delete-question", "data-id": question.id, "data-guard": "cooldown", text: "삭제" })
+        el("button", {
+          type: "button",
+          class: "btn btn-ghost",
+          "data-action": state.hidden.indexOf(question.id) === -1 ? "hide-question" : "show-question",
+          "data-id": question.id,
+          text: state.hidden.indexOf(question.id) === -1 ? "숨기기" : "보이기"
+        })
       ])
     ]);
   });
@@ -1414,32 +1469,31 @@ async function addQuestion(form) {
   renderBoard();
 }
 
-async function deleteQuestion(id) {
-  if (!(await requireAdmin())) return;
-  if (!window.confirm("이 질문을 삭제합니다. 연결된 답변도 함께 지워집니다. 계속할까요?")) return;
-  if (!assertCooldown()) return;
-  state.areas.forEach((area) => {
-    area.questions = area.questions.filter((item) => item.id !== id);
-  });
-  const bucket = state.answers[id] || {};
-  const removed = Object.keys(bucket);
-  const stamp = new Date().toISOString();
-  removed.forEach((authorId) => {
-    bucket[authorId] = { text: "", deleted: true, updatedAt: stamp };
-  });
-  let answersRemoved = true;
-  if (removed.length) {
-    try {
-      await syncEntries(removed.map((authorId) => [id, authorId]));
-    } catch (error) {
-      answersRemoved = false;
-    }
-  }
-  persistContent();
-  stampCooldown();
-  toast(answersRemoved ? "질문을 삭제했습니다." : "질문은 지웠지만 서버의 답변은 남았습니다. 다시 시도해 주세요.");
-  renderAdmin();
+async function setQuestionHidden(questionId, hidden) {
+  if (!questionId) return;
+  if (hidden && !window.confirm("이 질문을 숨깁니다. 답변은 지워지지 않고, 문제 수에는 들어가지 않습니다. 계속할까요?")) return;
+  const previous = state.hidden.slice();
+  state.hidden = hidden
+    ? cleanHidden(state.hidden.concat(questionId))
+    : state.hidden.filter((id) => id !== questionId);
+  const modal = document.getElementById("answer-modal");
+  const box = document.getElementById("answer-modal-text");
+  if (hidden && modal && !modal.hidden && box && box.dataset.question === questionId) closeAnswerModal();
   renderBoard();
+  if (!document.getElementById("admin").hidden) renderAdmin();
+  try {
+    const data = await boardRequest("POST", { op: "hide", questionId: questionId, hidden: hidden });
+    applySnapshot(data);
+    renderAuthorSelect();
+    renderBoard();
+    if (!document.getElementById("admin").hidden) renderAdmin();
+    toast(hidden ? "질문을 숨겼습니다." : "질문을 다시 보이게 했습니다.");
+  } catch (error) {
+    state.hidden = previous;
+    renderBoard();
+    if (!document.getElementById("admin").hidden) renderAdmin();
+    toast(error && error.message ? error.message : "질문을 숨기지 못했습니다.");
+  }
 }
 
 async function saveReference(form) {
@@ -1676,7 +1730,14 @@ async function onAdminClick(event) {
     await resetToFiles();
     return;
   }
-  if (action === "delete-question") await deleteQuestion(button.dataset.id);
+  if (action === "hide-question") {
+    await setQuestionHidden(button.dataset.id, true);
+    return;
+  }
+  if (action === "show-question") {
+    await setQuestionHidden(button.dataset.id, false);
+    return;
+  }
   if (action === "delete-reference") await deleteReference(button.dataset.id);
   if (action === "delete-author") await deleteAuthor(button.dataset.id);
 }
@@ -1712,6 +1773,62 @@ async function onAdminChange(event) {
     target.value = "";
     await importReferenceFile(file);
   }
+}
+
+function answerFontSize() {
+  const size = Number(readRaw(STORAGE.answerFont));
+  return FONT_SIZES.indexOf(size) === -1 ? 16 : size;
+}
+
+function applyAnswerFont() {
+  const box = document.getElementById("answer-modal-text");
+  const size = answerFontSize();
+  if (box) box.style.fontSize = size + "px";
+  const down = document.getElementById("answer-font-down");
+  const up = document.getElementById("answer-font-up");
+  if (down) down.disabled = size <= FONT_SIZES[0];
+  if (up) up.disabled = size >= FONT_SIZES[FONT_SIZES.length - 1];
+}
+
+function stepAnswerFont(direction) {
+  const size = answerFontSize();
+  const index = FONT_SIZES.indexOf(size);
+  const next = FONT_SIZES[Math.min(FONT_SIZES.length - 1, Math.max(0, index + direction))];
+  try { localStorage.setItem(STORAGE.answerFont, String(next)); } catch (error) { /* ignore */ }
+  applyAnswerFont();
+}
+
+function downloadPdf() {
+  const author = currentAuthor();
+  if (!author) {
+    toast("작성자를 먼저 선택해 주세요.");
+    return;
+  }
+  const root = document.getElementById("print-root");
+  const blocks = [
+    el("header", { class: "sheet-head" }, [
+      el("h1", { text: "두레중 면접 준비" }),
+      el("p", { text: author.name })
+    ])
+  ];
+  state.areas.forEach((area) => {
+    const questions = visibleQuestions(area);
+    if (!questions.length) return;
+    blocks.push(el("h2", { text: area.title }));
+    questions.forEach((question, index) => {
+      const saved = state.answers[question.id] && state.answers[question.id][author.id];
+      const text = saved && saved.text && !saved.deleted ? saved.text : "";
+      blocks.push(el("section", { class: "qa" }, [
+        el("p", { class: "q", text: (index + 1) + ". " + question.text }),
+        el("p", { class: "a", text: text })
+      ]));
+    });
+  });
+  root.replaceChildren(...blocks);
+  const previousTitle = document.title;
+  document.title = "두레중 면접 준비-" + author.name;
+  window.print();
+  document.title = previousTitle;
 }
 
 function bindEvents() {
@@ -1750,6 +1867,8 @@ function bindEvents() {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
     if (button.dataset.action === "write") openAnswerModal(button.dataset.question);
+    if (button.dataset.action === "hide-question") setQuestionHidden(button.dataset.question, true);
+    if (button.dataset.action === "show-question") setQuestionHidden(button.dataset.question, false);
   });
 
   document.getElementById("answer-form").addEventListener("submit", (event) => {
@@ -1762,6 +1881,9 @@ function bindEvents() {
     const questionId = document.getElementById("answer-modal-delete").dataset.question;
     if (questionId) requestDelete(questionId);
   });
+  document.getElementById("answer-font-down").addEventListener("click", () => stepAnswerFont(-1));
+  document.getElementById("answer-font-up").addEventListener("click", () => stepAnswerFont(1));
+  document.getElementById("download-pdf").addEventListener("click", downloadPdf);
 
   document.getElementById("ai-toggle-input").addEventListener("change", (event) => {
     if (!state.isAdmin) return;
@@ -1840,6 +1962,7 @@ async function init() {
     state.showAiAnswers = readAiVisibility();
     renderAuthorSelect();
     renderBoard();
+    applyAnswerFont();
     updateAdminButton();
     updateCooldownUI();
     window.setInterval(updateCooldownUI, 500);

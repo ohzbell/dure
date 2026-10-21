@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f4efe6">
   <title>두레중 면접 준비</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
   <a class="skip" href="#main">본문으로 건너뛰기</a>
@@ -41,6 +41,7 @@
     <div class="data-tools">
       <button type="button" class="btn btn-ghost" id="export-answers">답변 내려받기</button>
       <button type="button" class="btn btn-ghost" id="import-answers">답변 올리기</button>
+      <button type="button" class="btn btn-ghost" id="download-pdf">PDF 내려받기</button>
       <input id="import-answers-file" type="file" accept="application/json,.json" hidden>
     </div>
     <p class="hint">폰에 남아 있는 답변은 그 폰에서 답변 내려받기로 저장한 다음, 답변 올리기로 서버에 반영합니다.</p>
@@ -68,9 +69,16 @@
       <p class="eyebrow" id="answer-modal-author">답변</p>
       <h2 id="answer-modal-title">답변 작성</h2>
       <p class="muted" id="answer-modal-question"></p>
-      <label class="field" for="answer-modal-text">답변
+      <div class="field">
+        <div class="answer-label">
+          <label for="answer-modal-text">답변</label>
+          <div class="font-tools">
+            <button type="button" class="btn btn-ghost" id="answer-font-down">작게</button>
+            <button type="button" class="btn btn-ghost" id="answer-font-up">크게</button>
+          </div>
+        </div>
         <textarea id="answer-modal-text" class="textarea" rows="8" maxlength="8000" autocomplete="off"></textarea>
-      </label>
+      </div>
       <p class="save-state" id="answer-save-state" role="status"></p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="answer-modal-close">닫기</button>
@@ -141,8 +149,9 @@
       <div id="admin-root"></div>
     </div>
   </section>
+  <div id="print-root" class="print-root"></div>
   <p id="toast" class="toast" role="status" aria-live="polite"></p>
   <noscript><p class="notice">이 보드는 자바스크립트가 필요합니다.</p></noscript>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>
