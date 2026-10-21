@@ -20,7 +20,7 @@
       <div class="brand">
         <p class="eyebrow">DURE</p>
         <h1>두레중 면접 준비</h1>
-        <p class="lede">두레자연중학교 면접 연습입니다. 아빠, 엄마, 아이가 이름을 고르고 답하고, AI 모범 답변을 옆에 둡니다.</p>
+        <p class="lede">두레자연중학교 면접 연습입니다. 이름을 고르고 답하고, AI 모범 답변을 옆에 둡니다.</p>
       </div>
       <div class="top-actions">
         <label class="field" for="author-select">작성자
@@ -39,9 +39,10 @@
     <p class="hint" id="sync-note" hidden></p>
     <div class="data-tools">
       <button type="button" class="btn btn-ghost" id="export-answers">답변 내려받기</button>
-      <button type="button" class="btn btn-ghost" id="import-answers">답변 불러오기</button>
+      <button type="button" class="btn btn-ghost" id="import-answers">답변 올리기</button>
       <input id="import-answers-file" type="file" accept="application/json,.json" hidden>
     </div>
+    <p class="hint">폰에 남아 있는 답변은 그 폰에서 답변 내려받기로 저장한 다음, 답변 올리기로 서버에 반영합니다.</p>
     <p class="cooldown" id="cooldown-note" role="status"></p>
     <nav id="area-tabs" class="tabs" role="tablist" aria-label="영역"></nav>
     <main id="main" class="layout">
@@ -141,6 +142,6 @@
   </section>
   <p id="toast" class="toast" role="status" aria-live="polite"></p>
   <noscript><p class="notice">이 보드는 자바스크립트가 필요합니다.</p></noscript>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

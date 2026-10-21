@@ -6,16 +6,12 @@
       "locked": true
     },
     {
-      "id": "author-dad",
-      "name": "아빠"
-    },
-    {
-      "id": "author-mom",
-      "name": "엄마"
-    },
-    {
       "id": "author-child",
       "name": "아이"
+    },
+    {
+      "id": "author-mvgoejtu-hydayw",
+      "name": "아빠"
     }
   ]
 }

@@ -1,4 +1,5 @@
 {
-  "provider": "keyvalue.immanuel.co",
-  "appKey": "blnzp8xf"
+  "provider": "sis.athenatov.com",
+  "endpoint": "https://sis.athenatov.com/k4m8q2v7/sync.php",
+  "key": "3f2027a90ac374facc6eaf48bc01ec597504e71a94b13cce"
 }

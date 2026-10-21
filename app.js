@@ -279,14 +279,8 @@ function answeredCount(area) {
   return area.questions.filter((question) => getAnswer(question.id, state.authorId)).length;
 }
 
-const KV_ROOT = "https://keyvalue.immanuel.co/api/KeyVal";
-const KV_URL_BUDGET = 270;
-
-let answerStore = { appKey: "" };
+let answerStore = { endpoint: "", key: "" };
 let syncing = false;
-let catalogMemo = {};
-let catalogStamps = {};
-let catalogsReady = false;
 let remoteReady = false;
 let autosaveTimer = 0;
 let saveAgain = false;
@@ -326,9 +320,10 @@ function mergeAnswers(base, extra) {
 }
 
 function exportableAnswers() {
+  const merged = mergeAnswers(state.answers, readStore(STORAGE.answers) || {});
   const out = {};
-  Object.keys(state.answers).forEach((questionId) => {
-    const bucket = state.answers[questionId];
+  Object.keys(merged).forEach((questionId) => {
+    const bucket = merged[questionId];
     if (!bucket || typeof bucket !== "object") return;
     Object.keys(bucket).forEach((authorId) => {
       const entry = normalizeEntry(bucket[authorId]);
@@ -344,228 +339,6 @@ function cacheAnswers() {
   writeStore(STORAGE.answers, state.answers);
 }
 
-function timeKey(iso) {
-  return String(iso || "").replace(/\D/g, "").slice(0, 17).padEnd(17, "0");
-}
-
-function encodeB64Url(text) {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function decodeB64Url(text) {
-  const pad = (4 - (text.length % 4)) % 4;
-  const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad));
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return new TextDecoder().decode(bytes);
-}
-
-function pairName(questionId, authorId, suffix) {
-  const question = String(questionId).replace(/[^A-Za-z0-9-]/g, "");
-  const author = String(authorId).replace(/[^A-Za-z0-9-]/g, "");
-  if (!question || !author) throw new Error("질문 또는 작성자 아이디를 서버 키로 바꾸지 못했습니다.");
-  return "a_" + question + "_" + author + "_" + suffix;
-}
-
-function valueBudget(name) {
-  const prefix = KV_ROOT + "/UpdateValue/" + answerStore.appKey + "/" + name + "/";
-  return KV_URL_BUDGET - prefix.length;
-}
-
-function encodeChunks(value, budget) {
-  const encoded = encodeB64Url(JSON.stringify(value));
-  const size = budget;
-  if (size < 40) throw new Error("서버 키 이름이 너무 깁니다.");
-  const parts = [];
-  for (let index = 0; index < encoded.length; index += size) parts.push(encoded.slice(index, index + size));
-  return parts.length ? parts : [encodeB64Url("{}")];
-}
-
-async function kvPut(name, value) {
-  if (!/^[A-Za-z0-9_-]+$/.test(name) || !/^[A-Za-z0-9_-]+$/.test(value)) {
-    throw new Error("서버에 보낼 수 없는 문자가 있습니다.");
-  }
-  if (value.length > valueBudget(name)) throw new Error("서버에 보낼 조각이 너무 깁니다.");
-  const response = await fetch(KV_ROOT + "/UpdateValue/" + answerStore.appKey + "/" + name + "/" + value, {
-    method: "POST",
-    cache: "no-store"
-  });
-  const body = (await response.text()).trim();
-  if (!response.ok || body !== "true") throw new Error("답변 서버에 저장하지 못했습니다.");
-}
-
-async function kvRead(name) {
-  const response = await fetch(KV_ROOT + "/GetValue/" + answerStore.appKey + "/" + name, { cache: "no-store" });
-  if (!response.ok) throw new Error("답변 서버를 읽지 못했습니다.");
-  const data = await response.json();
-  return data == null ? "" : String(data);
-}
-
-async function mapLimit(items, limit, worker) {
-  const results = new Array(items.length);
-  let cursor = 0;
-  async function run() {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await worker(items[index], index);
-    }
-  }
-  const count = Math.min(limit, items.length);
-  await Promise.all(Array.from({ length: count }, run));
-  return results;
-}
-
-async function writeBlob(baseName, value) {
-  const sample = baseName + "0";
-  const parts = encodeChunks(value, valueBudget(sample));
-  await mapLimit(parts, 6, (part, index) => kvPut(baseName + index, part));
-  await kvPut(baseName + "n", String(parts.length));
-}
-
-async function readBlob(baseName) {
-  const count = Number(await kvRead(baseName + "n")) || 0;
-  if (!count) return null;
-  const parts = await mapLimit(
-    Array.from({ length: count }, (value, index) => index),
-    6,
-    (index) => kvRead(baseName + index)
-  );
-  if (parts.some((part) => !part)) return null;
-  return JSON.parse(decodeB64Url(parts.join("")));
-}
-
-function payloadToEntry(payload) {
-  if (!payload || typeof payload.u !== "string") return null;
-  if (payload.d === true) return { text: "", deleted: true, updatedAt: payload.u };
-  if (typeof payload.t !== "string") return null;
-  return normalizeEntry({ text: payload.t, updatedAt: payload.u });
-}
-
-async function readEntry(questionId, authorId) {
-  return payloadToEntry(await readBlob(pairName(questionId, authorId, "p")));
-}
-
-async function readIndex() {
-  const payload = await readBlob("i");
-  if (!Array.isArray(payload)) return [];
-  return payload.filter((pair) => Array.isArray(pair) && typeof pair[0] === "string" && typeof pair[1] === "string");
-}
-
-function catalogBase(authorId) {
-  return "c_" + String(authorId).replace(/[^A-Za-z0-9-]/g, "");
-}
-
-function catalogStampKey(authorId) {
-  return "cs_" + String(authorId).replace(/[^A-Za-z0-9-]/g, "");
-}
-
-function canPublish(authorId) {
-  if (!authorId || authorId === "author-ai") return false;
-  const author = state.authors.find((item) => item.id === authorId);
-  return !author || author.locked !== true;
-}
-
-function cleanCatalogItems(items) {
-  if (!Array.isArray(items)) return [];
-  return items.filter((item) => item && typeof item.q === "string" && typeof item.u === "string");
-}
-
-async function readAuthorCatalog(authorId) {
-  const doc = await readBlob(catalogBase(authorId));
-  if (!doc || !Array.isArray(doc.items)) return [];
-  return cleanCatalogItems(doc.items);
-}
-
-async function readBody(questionId, authorId, chunks) {
-  const count = Number(chunks) || 0;
-  if (!count) return null;
-  const base = pairName(questionId, authorId, "p");
-  const parts = await mapLimit(
-    Array.from({ length: count }, (value, index) => index),
-    6,
-    (index) => kvRead(base + index)
-  );
-  if (parts.some((part) => !part)) return null;
-  return JSON.parse(decodeB64Url(parts.join("")));
-}
-
-async function writeBody(questionId, authorId, entry) {
-  const payload = entry.deleted
-    ? { d: true, u: entry.updatedAt }
-    : { t: entry.text, u: entry.updatedAt };
-  const base = pairName(questionId, authorId, "p");
-  const parts = encodeChunks(payload, valueBudget(base + "0"));
-  await mapLimit(parts, 6, (part, index) => kvPut(base + index, part));
-  return parts.length;
-}
-
-function takeRemoteEntry(questionId, authorId, entry) {
-  if (!entry) return false;
-  const bucket = state.answers[questionId] && state.answers[questionId][authorId];
-  if (bucket && String(bucket.updatedAt || "") >= String(entry.updatedAt)) return false;
-  if (!state.answers[questionId]) state.answers[questionId] = {};
-  state.answers[questionId][authorId] = entry;
-  return true;
-}
-
-async function updateAuthorCatalog(authorId, item) {
-  const base = catalogBase(authorId);
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const current = catalogMemo[authorId] || await readAuthorCatalog(authorId);
-    const map = new Map();
-    current.forEach((entry) => map.set(entry.q, entry));
-    const prev = map.get(item.q);
-    if (prev && String(prev.u) > String(item.u)) return { remote: prev };
-    if (prev && prev.u === item.u && prev.n === item.n && prev.d === item.d) {
-      catalogMemo[authorId] = current;
-      return { ok: true };
-    }
-    map.set(item.q, item);
-    const items = Array.from(map.values());
-    const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    await writeBlob(base, { token: token, items: items });
-    await kvPut(catalogStampKey(authorId), token);
-    catalogMemo[authorId] = items;
-    catalogStamps[authorId] = token;
-    return { ok: true };
-  }
-  throw new Error("답변 목록을 서버에 반영하지 못했습니다.");
-}
-
-async function publishEntry(questionId, authorId, entry) {
-  const item = entry.deleted
-    ? { q: questionId, u: entry.updatedAt, d: 1 }
-    : { q: questionId, u: entry.updatedAt, n: await writeBody(questionId, authorId, entry) };
-  const result = await updateAuthorCatalog(authorId, item);
-  if (result && result.remote) await adoptRemote(questionId, authorId, result.remote, entry);
-}
-
-async function adoptRemote(questionId, authorId, remoteItem, attempted) {
-  const entry = remoteItem.d
-    ? { text: "", deleted: true, updatedAt: remoteItem.u }
-    : payloadToEntry(await readBody(questionId, authorId, remoteItem.n || 1));
-  if (!entry) return;
-  const box = document.getElementById("answer-modal-text");
-  const editing = box
-    && document.getElementById("answer-modal").hidden === false
-    && box.dataset.question === questionId
-    && state.authorId === authorId;
-  if (editing && box.value.trim() !== (attempted.deleted ? "" : attempted.text)) return;
-  takeRemoteEntry(questionId, authorId, entry);
-  cacheAnswers();
-  if (editing) {
-    box.value = entry.deleted ? "" : entry.text;
-    setSaveStatus("다른 곳에서 저장된 내용으로 맞췄습니다.");
-  }
-  if (!editing) renderBoard();
-}
-
 const authorQueues = new Map();
 
 function enqueueAuthor(authorId, job) {
@@ -575,140 +348,131 @@ function enqueueAuthor(authorId, job) {
   return next;
 }
 
-async function syncEntries(pairs) {
-  for (let index = 0; index < pairs.length; index += 1) {
-    const questionId = pairs[index][0];
-    const authorId = pairs[index][1];
-    if (!canPublish(authorId)) continue;
-    const entry = normalizeEntry(state.answers[questionId] && state.answers[questionId][authorId]);
-    if (!entry) continue;
-    await enqueueAuthor(authorId, () => publishEntry(questionId, authorId, entry));
-  }
-  cacheAnswers();
-}
-
-async function ensureCatalogs() {
-  if (catalogsReady) return;
-  const indexStamp = await kvRead("iu");
-  if (!indexStamp) {
-    catalogsReady = true;
-    return;
-  }
-  const migrated = await kvRead("cm");
-  if (migrated === indexStamp) {
-    catalogsReady = true;
-    return;
-  }
-  const pairs = await readIndex();
-  const grouped = {};
-  pairs.forEach((pair) => {
-    if (!canPublish(pair[1])) return;
-    if (!grouped[pair[1]]) grouped[pair[1]] = [];
-    grouped[pair[1]].push(pair[0]);
+async function boardRequest(method, body) {
+  const response = await fetch(answerStore.endpoint, {
+    method: method,
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Board-Key": answerStore.key
+    },
+    body: method === "GET" ? undefined : JSON.stringify(body)
   });
-  const authorIds = Object.keys(grouped);
-  for (let index = 0; index < authorIds.length; index += 1) {
-    const authorId = authorIds[index];
-    const existing = await readAuthorCatalog(authorId);
-    const seen = new Set(existing.map((item) => item.q));
-    const items = existing.slice();
-    for (let cursor = 0; cursor < grouped[authorId].length; cursor += 1) {
-      const questionId = grouped[authorId][cursor];
-      if (seen.has(questionId)) continue;
-      const entry = await readEntry(questionId, authorId);
-      if (!entry) continue;
-      const chunks = Number(await kvRead(pairName(questionId, authorId, "pn"))) || 1;
-      items.push(entry.deleted
-        ? { q: questionId, u: entry.updatedAt, d: 1 }
-        : { q: questionId, u: entry.updatedAt, n: chunks });
-      seen.add(questionId);
-    }
-    if (items.length !== existing.length) {
-      const token = "m" + Date.now().toString(36);
-      await writeBlob(catalogBase(authorId), { token: token, items: items });
-      await kvPut(catalogStampKey(authorId), token);
-      catalogMemo[authorId] = items;
-      catalogStamps[authorId] = token;
-    }
+  let data = null;
+  try { data = await response.json(); } catch (error) { data = null; }
+  if (!response.ok || !data || data.ok !== true) {
+    throw new Error((data && data.message) || "답변 서버에 연결하지 못했습니다.");
   }
-  await kvPut("cm", indexStamp);
-  catalogsReady = true;
+  return data;
 }
 
-async function pullAuthor(authorId) {
-  const stamp = await kvRead(catalogStampKey(authorId));
-  if (stamp === catalogStamps[authorId] && Array.isArray(catalogMemo[authorId])) return false;
-  const items = await readAuthorCatalog(authorId);
-  catalogMemo[authorId] = items;
-  catalogStamps[authorId] = stamp;
-  let changed = false;
-  const jobs = [];
-  items.forEach((item) => {
-    const local = state.answers[item.q] && state.answers[item.q][authorId];
-    if (local && String(local.updatedAt || "") >= String(item.u)) return;
-    if (item.d) {
-      if (takeRemoteEntry(item.q, authorId, { text: "", deleted: true, updatedAt: item.u })) changed = true;
-      return;
-    }
-    jobs.push(async () => {
-      const entry = payloadToEntry(await readBody(item.q, authorId, item.n || 1));
-      return takeRemoteEntry(item.q, authorId, entry);
+function answersKey(answers) {
+  const lines = [];
+  Object.keys(answers).sort().forEach((questionId) => {
+    const bucket = answers[questionId] || {};
+    Object.keys(bucket).sort().forEach((authorId) => {
+      const entry = bucket[authorId];
+      lines.push([questionId, authorId, entry.updatedAt, entry.deleted ? "1" : "0", entry.text].join("\u0001"));
     });
   });
-  const found = await mapLimit(jobs, 6, (job) => job());
-  return changed || found.some(Boolean);
+  return lines.join("\n");
 }
 
-async function healAuthor(authorId) {
-  const items = catalogMemo[authorId] || [];
-  const known = new Map(items.map((item) => [item.q, item]));
-  const bucketIds = Object.keys(state.answers);
-  for (let index = 0; index < bucketIds.length; index += 1) {
-    const questionId = bucketIds[index];
-    const entry = normalizeEntry(state.answers[questionId] && state.answers[questionId][authorId]);
-    if (!entry || !canPublish(authorId)) continue;
-    const remote = known.get(questionId);
-    if (remote && String(remote.u) >= String(entry.updatedAt)) continue;
-    await publishEntry(questionId, authorId, entry);
+function applySnapshot(doc) {
+  const authors = normalizeAuthors(doc.authors);
+  let authorsChanged = false;
+  if (authors && String(doc.authorsUpdatedAt || "") !== String(state.authorsUpdatedAt || "")) {
+    applyAuthors(authors, doc.authorsUpdatedAt || "");
+    authorsChanged = true;
   }
+  const next = {};
+  Object.keys(state.answers).forEach((questionId) => {
+    const bucket = state.answers[questionId];
+    const ai = normalizeEntry(bucket && bucket["author-ai"]);
+    if (!ai) return;
+    next[questionId] = { "author-ai": ai };
+  });
+  const remote = doc.answers && typeof doc.answers === "object" && !Array.isArray(doc.answers) ? doc.answers : {};
+  Object.keys(remote).forEach((questionId) => {
+    const byAuthor = remote[questionId];
+    if (!byAuthor || typeof byAuthor !== "object" || Array.isArray(byAuthor)) return;
+    Object.keys(byAuthor).forEach((authorId) => {
+      if (authorId === "author-ai") return;
+      const entry = normalizeEntry(byAuthor[authorId]);
+      if (!entry) return;
+      if (!next[questionId]) next[questionId] = {};
+      next[questionId][authorId] = entry;
+    });
+  });
+  const box = document.getElementById("answer-modal-text");
+  const modal = document.getElementById("answer-modal");
+  const questionId = box && box.dataset.question;
+  const authorId = state.authorId;
+  const editing = box && modal && modal.hidden === false && questionId && authorId;
+  if (editing) {
+    const typed = box.value.trim();
+    const local = normalizeEntry(state.answers[questionId] && state.answers[questionId][authorId]);
+    const localText = local && !local.deleted ? local.text : "";
+    if (typed !== localText && local) {
+      if (!next[questionId]) next[questionId] = {};
+      next[questionId][authorId] = local;
+    }
+  }
+  const changed = authorsChanged || answersKey(state.answers) !== answersKey(next);
+  state.answers = next;
+  cacheAnswers();
+  return changed;
+}
+
+async function publishEntry(questionId, authorId, entry) {
+  const data = await boardRequest("POST", {
+    op: "put",
+    questionId: questionId,
+    authorId: authorId,
+    text: entry.deleted ? "" : entry.text,
+    deleted: entry.deleted === true,
+    updatedAt: entry.updatedAt
+  });
+  if (data.kept && data.entry) {
+    const remote = normalizeEntry(data.entry);
+    if (remote) adoptServerEntry(questionId, authorId, remote, entry);
+  }
+}
+
+function adoptServerEntry(questionId, authorId, entry, attempted) {
+  const box = document.getElementById("answer-modal-text");
+  const modal = document.getElementById("answer-modal");
+  const editing = box && modal && modal.hidden === false && box.dataset.question === questionId && state.authorId === authorId;
+  if (editing && box.value.trim() !== (attempted.deleted ? "" : attempted.text)) return;
+  if (!state.answers[questionId]) state.answers[questionId] = {};
+  state.answers[questionId][authorId] = entry;
+  cacheAnswers();
+  if (editing) {
+    box.value = entry.deleted ? "" : entry.text;
+    setSaveStatus("다른 곳에서 저장된 내용으로 맞췄습니다.");
+  }
+  if (!editing) renderBoard();
 }
 
 async function syncRemote() {
-  if (syncing || saveBusy || !answerStore.appKey) return;
+  if (syncing || saveBusy || !answerStore.endpoint) return;
   syncing = true;
   if (!remoteReady) setSyncNote("답변을 불러오는 중");
   try {
-    try {
-      const remoteAuthors = await readAuthorsRemote();
-      const authorStamp = await kvRead("aut");
-      state.authorsStamp = authorStamp;
-      if (remoteAuthors && remoteAuthors.updatedAt !== state.authorsUpdatedAt) {
-        applyAuthors(remoteAuthors.authors, remoteAuthors.updatedAt);
-        renderAuthorSelect();
-      }
-    } catch (error) {
-      const cached = readStore(STORAGE.authors);
-      const cachedAuthors = cached && normalizeAuthors(cached.authors);
-      if (cachedAuthors) applyAuthors(cachedAuthors, cached.updatedAt || "");
-    }
-    await ensureCatalogs();
-    const writers = state.authors.filter((author) => canPublish(author.id));
-    const pulled = await mapLimit(writers, 4, (author) => pullAuthor(author.id));
-    const changed = pulled.some(Boolean);
-    for (let index = 0; index < writers.length; index += 1) {
-      await enqueueAuthor(writers[index].id, () => healAuthor(writers[index].id));
-    }
-    cacheAnswers();
+    const data = await boardRequest("GET");
+    const changed = applySnapshot(data);
     const typing = document.activeElement && document.activeElement.tagName === "TEXTAREA";
+    if (changed) renderAuthorSelect();
     if (changed && !typing) renderBoard();
     remoteReady = true;
+    setSyncNote("");
   } catch (error) {
-    return;
+    setSyncNote("서버에 연결하지 못했습니다. 잠시 후 다시 시도합니다.");
   } finally {
     syncing = false;
-    setSyncNote("");
   }
 }
+
 
 function persistContent() {
   writeStore(STORAGE.content, {
@@ -752,14 +516,14 @@ async function loadData() {
 
   let storeFile = null;
   try { storeFile = await fetchJson("data/store.json"); } catch (error) { storeFile = null; }
-  if (!storeFile || typeof storeFile.appKey !== "string" || !/^[A-Za-z0-9]+$/.test(storeFile.appKey)) {
+  if (!storeFile || typeof storeFile.endpoint !== "string" || !/^https:\/\/sis\.athenatov\.com\/[a-z0-9]+\/sync\.php$/.test(storeFile.endpoint)) {
+    throw new Error("data/store.json의 저장소 주소를 확인해 주세요.");
+  }
+  if (typeof storeFile.key !== "string" || !/^[A-Za-z0-9]{32,128}$/.test(storeFile.key)) {
     throw new Error("data/store.json의 저장소 키를 확인해 주세요.");
   }
   answerStore = storeFile;
-  const cachedAuthors = readStore(STORAGE.authors);
-  const cachedAuthorList = cachedAuthors && normalizeAuthors(cachedAuthors.authors);
-  if (cachedAuthorList) applyAuthors(cachedAuthorList, cachedAuthors.updatedAt || "");
-  state.answers = mergeAnswers(answersFile.answers || {}, readStore(STORAGE.answers) || {});
+  state.answers = mergeAnswers(answersFile.answers || {}, {});
   state.areaId = state.areas[0].id;
   const storedAuthor = readRaw(STORAGE.author) || "";
   state.authorId = state.authors.some((author) => author.id === storedAuthor && author.locked !== true) ? storedAuthor : "";
@@ -839,21 +603,22 @@ function cacheAuthors() {
   writeStore(STORAGE.authors, { updatedAt: state.authorsUpdatedAt, authors: state.authors });
 }
 
-async function readAuthorsRemote() {
-  const payload = await readBlob("au");
-  if (!payload) return null;
-  const authors = normalizeAuthors(payload.authors);
-  if (!authors) return null;
-  return { authors: authors, updatedAt: typeof payload.updatedAt === "string" ? payload.updatedAt : "" };
-}
-
 async function persistAuthors() {
   state.authorsUpdatedAt = new Date().toISOString();
   cacheAuthors();
-  await writeBlob("au", { authors: state.authors, updatedAt: state.authorsUpdatedAt });
-  const stamp = timeKey(state.authorsUpdatedAt);
-  await kvPut("aut", stamp);
-  state.authorsStamp = stamp;
+  const data = await boardRequest("POST", {
+    op: "authors",
+    authors: state.authors,
+    updatedAt: state.authorsUpdatedAt
+  });
+  if (data.kept) {
+    const authors = normalizeAuthors(data.authors);
+    if (authors) {
+      applyAuthors(authors, data.authorsUpdatedAt || "");
+      renderAuthorSelect();
+      renderBoard();
+    }
+  }
 }
 
 function applyAuthors(authors, updatedAt) {
@@ -1842,26 +1607,21 @@ async function importAnswers(file) {
     toast("파일이 너무 큽니다.");
     return;
   }
-  if (!window.confirm("답변 파일을 서버의 답변과 합칩니다. 더 최근 시각의 답변을 남깁니다. 계속할까요?")) return;
+  if (!window.confirm("이 파일의 답변을 서버에 올립니다. 같은 답변은 더 최근 시각을 남깁니다. 계속할까요?")) return;
   try {
     const data = await readJsonFile(file);
     if (!data || typeof data.answers !== "object" || data.answers == null || Array.isArray(data.answers)) {
       toast("answers.json 형식이 아닙니다.");
       return;
     }
-    state.answers = mergeAnswers(state.answers, data.answers);
-    const pairs = [];
-    Object.keys(state.answers).forEach((questionId) => {
-      Object.keys(state.answers[questionId] || {}).forEach((authorId) => {
-        if (normalizeEntry(state.answers[questionId][authorId])) pairs.push([questionId, authorId]);
-      });
-    });
     saveBusy = true;
-    await syncEntries(pairs);
-    toast("답변 파일을 서버에 반영했습니다.");
+    const result = await boardRequest("POST", { op: "import", answers: data.answers });
+    applySnapshot(result);
+    renderAuthorSelect();
     renderBoard();
+    toast("답변 파일을 서버에 반영했습니다.");
   } catch (error) {
-    toast(error && error.message && error.message.indexOf("형식") >= 0 ? error.message : "답변 파일을 서버에 반영하지 못했습니다.");
+    toast(error && error.message ? error.message : "답변 파일을 서버에 반영하지 못했습니다.");
   } finally {
     saveBusy = false;
   }
