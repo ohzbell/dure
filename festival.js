@@ -252,7 +252,7 @@ function renderPlay() {
     });
     bar.append(tab);
   });
-  stage.replaceChildren(player, bar);
+  stage.replaceChildren(bar, player);
   state.playerFor = group.id;
   mountPlayer(videoId(group.youtube));
 }
@@ -861,6 +861,11 @@ function bind() {
   document.getElementById("admin-open").addEventListener("click", openAdmin);
   const reset = document.getElementById("reset-draw");
   if (reset) reset.addEventListener("click", resetDraw);
+  const back = document.getElementById("go-back");
+  if (back) back.addEventListener("click", () => {
+    if (history.length > 1) history.back();
+    else location.href = "go.html";
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.adminOpen) closeAdmin();
   });

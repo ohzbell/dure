@@ -20,7 +20,7 @@ button, a, input { font-family: inherit; }
   overflow: hidden;
 }
 
-.stage-play { padding: 0; }
+.stage-play { padding: 80px 0 0; }
 .stage-draw { padding-bottom: 16vh; }
 
 .mast { flex: 0 0 auto; text-align: center; }
@@ -202,7 +202,7 @@ button, a, input { font-family: inherit; }
   flex: 1 1 0;
   min-width: 0;
   border: 0;
-  border-top: 4px solid #2a2a2a;
+  border-bottom: 4px solid #2a2a2a;
   background: #000;
   color: #fff;
   font-size: clamp(22px, 4vh, 56px);
@@ -227,24 +227,43 @@ button, a, input { font-family: inherit; }
 
 .missing a { color: #ffe08a; }
 
-.draw-link, .admin-link {
+.home-link, .top-tools, .admin-link {
   position: fixed;
   z-index: 6;
+  color: #fff;
+}
+
+.home-link, .draw-link, .back-link, .admin-link {
   display: grid;
   place-items: center;
-  color: #fff;
   background: transparent;
   text-decoration: none;
 }
 
-.draw-link {
+.home-link {
   top: 1.4vh;
   left: 1.2vw;
   width: 64px;
   height: 64px;
 }
 
-.draw-link svg, .admin-link svg {
+.top-tools {
+  top: 1.4vh;
+  right: 1.2vw;
+  display: flex;
+  align-items: center;
+}
+
+.draw-link, .back-link {
+  width: 64px;
+  height: 64px;
+  border: 0;
+  padding: 0;
+  color: #fff;
+  cursor: pointer;
+}
+
+.home-link svg, .draw-link svg, .back-link svg, .admin-link svg {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -252,7 +271,7 @@ button, a, input { font-family: inherit; }
   stroke-linejoin: round;
 }
 
-.draw-link svg { width: 42px; height: 42px; }
+.home-link svg, .draw-link svg, .back-link svg { width: 42px; height: 42px; }
 .draw-link circle { fill: currentColor; stroke: none; }
 
 .admin-link {
