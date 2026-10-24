@@ -6,6 +6,7 @@ html, body {
   font-family: Pretendard, "Malgun Gothic", sans-serif;
   overflow: hidden;
   overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 button, a, input { font-family: inherit; }
@@ -59,7 +60,7 @@ button, a, input { font-family: inherit; }
   border-radius: 28px;
   background: #050505;
   color: #fff;
-  font-size: clamp(32px, 4vw, 72px);
+  font-size: clamp(22px, 3.6vw, 72px);
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.03em;
@@ -78,8 +79,11 @@ button, a, input { font-family: inherit; }
 }
 
 .card.is-used {
-  filter: blur(3px);
-  opacity: 0.72;
+  filter: blur(3px) grayscale(1);
+  opacity: 0.55;
+  color: #c8c8c8;
+  border-color: #8d8d8d;
+  background: #161616;
 }
 
 .card.is-hot {
@@ -227,7 +231,7 @@ button, a, input { font-family: inherit; }
 
 .missing a { color: #ffe08a; }
 
-.home-link, .top-tools, .admin-link {
+.top-tools, .admin-link {
   position: fixed;
   z-index: 6;
   color: #fff;
@@ -240,21 +244,14 @@ button, a, input { font-family: inherit; }
   text-decoration: none;
 }
 
-.home-link {
-  top: 1.4vh;
-  left: 1.2vw;
-  width: 64px;
-  height: 64px;
-}
-
 .top-tools {
-  top: 1.4vh;
-  right: 1.2vw;
+  top: max(8px, 1.2vh);
+  right: max(8px, 1vw);
   display: flex;
   align-items: center;
 }
 
-.draw-link, .back-link {
+.home-link, .draw-link, .back-link {
   width: 64px;
   height: 64px;
   border: 0;
@@ -317,6 +314,51 @@ button, a, input { font-family: inherit; }
   font-size: 30px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.draw-start {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 7;
+  transform: translate(-50%, -50%);
+  min-width: min(72vw, 460px);
+  min-height: 128px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #000;
+  font-size: clamp(42px, 8vw, 92px);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.draw-start[hidden] { display: none !important; }
+
+@media (max-width: 800px) {
+  .stage { padding: 68px 3vw 12px; }
+  .stage-draw { padding-bottom: 88px; }
+  .stage-play { padding-top: 58px; }
+  .mast h1 { font-size: clamp(22px, 6vw, 36px); }
+  .mast p { font-size: clamp(14px, 3.8vw, 22px); }
+  .card { font-size: clamp(20px, 5.4vw, 40px); border-width: 4px; border-radius: 16px; }
+  .group-title { font-size: clamp(26px, 7vw, 48px); }
+  .play-link { height: 64px; font-size: 28px; }
+  .class-bar { flex-basis: 68px; }
+  .class-tab { font-size: clamp(16px, 4.4vw, 28px); }
+  .home-link, .draw-link, .back-link { width: 48px; height: 48px; }
+  .home-link svg, .draw-link svg, .back-link svg { width: 30px; height: 30px; }
+  .draw-start { min-height: 88px; font-size: clamp(36px, 12vw, 64px); }
+  #reset-draw { min-width: 140px; min-height: 48px; font-size: 20px; }
+  #draw-hint { font-size: 16px; }
+}
+
+@media (max-height: 520px) {
+  .stage { padding-top: 56px; }
+  .class-bar { flex-basis: 48px; }
+  .draw-start { min-height: 64px; }
+  .play-link { height: 52px; }
 }
 
 .toast {

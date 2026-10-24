@@ -139,13 +139,17 @@ function videoId(url) {
 }
 
 function gridShape(count) {
+  const width = window.innerWidth || 1200;
   if (count <= 1) return [1, 1];
+  if (width < 900) {
+    const cols = Math.min(2, count);
+    return [cols, Math.ceil(count / cols)];
+  }
   if (count === 2) return [2, 1];
   if (count <= 4) return [2, 2];
   if (count <= 6) return [3, 2];
   if (count <= 8) return [4, 2];
-  const cols = 4;
-  return [cols, Math.ceil(count / cols)];
+  return [4, Math.ceil(count / 4)];
 }
 
 function viewKey() {
@@ -172,8 +176,9 @@ function render() {
   const key = document.getElementById("admin-open");
   if (key) key.classList.toggle("is-in", state.admin);
   if (pageName() === "draw" && !state.spinning) {
-    setHint(state.reveal && state.winnerId ? "선택된 이름을 누르면 조 화면으로 갑니다" : "화면을 누르면 뽑습니다");
+    setHint(state.reveal && state.winnerId ? "선택된 이름을 누르면 조 화면으로 갑니다" : "Draw를 눌러 뽑습니다");
   }
+  updateDrawButton();
 }
 
 function renderHome() {
@@ -214,7 +219,10 @@ function renderGroup() {
   const title = el("h1", { class: "group-title", text: group.name });
   title.style.setProperty("--c", pastel(Math.max(0, index)));
   const list = el("div", { class: "class-list" });
-  const size = group.classes.length <= 3 ? "clamp(40px, 8vh, 96px)" : "clamp(26px, 5vh, 64px)";
+  const narrow = window.innerWidth < 800;
+  const size = narrow
+    ? (group.classes.length <= 3 ? "clamp(28px, 8vw, 48px)" : "clamp(20px, 5vw, 32px)")
+    : (group.classes.length <= 3 ? "clamp(40px, 8vh, 96px)" : "clamp(26px, 5vh, 64px)");
   group.classes.forEach((name) => {
     const line = el("p", { class: "class-name", text: name });
     line.style.fontSize = size;
@@ -308,7 +316,15 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function updateDrawButton() {
+  const button = document.getElementById("start-draw");
+  if (!button) return;
+  const left = state.groups.some((group) => !state.picked.includes(group.id));
+  button.hidden = state.spinning || state.reveal || !left;
+}
+
 function buildRace(pool, winnerId) {
+  if (pool.length <= 1) return [{ id: winnerId, delay: 2000 }];
   const ids = pool.map((group) => group.id);
   const seq = [];
   let cursor = 0;
@@ -342,11 +358,14 @@ async function startDraw() {
   state.reveal = false;
   state.winnerId = "";
   state.hotId = "";
+  updateDrawButton();
   renderDraw();
   const token = ++spinToken;
   const winner = pool[Math.floor(Math.random() * pool.length)];
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const seq = reduce ? [{ id: winner.id, delay: 180 }] : buildRace(pool, winner.id);
+  const seq = pool.length <= 1
+    ? [{ id: winner.id, delay: 2000 }]
+    : (reduce ? [{ id: winner.id, delay: 180 }] : buildRace(pool, winner.id));
   setHint("뽑는 중");
   for (let index = 0; index < seq.length; index += 1) {
     if (token !== spinToken) return;
@@ -362,6 +381,7 @@ async function startDraw() {
   state.pendingPick = true;
   saveCache();
   setHint("선택된 이름을 누르면 조 화면으로 갑니다");
+  updateDrawButton();
   renderDraw();
   try {
     await sendPick();
@@ -385,7 +405,8 @@ async function resetDraw() {
   state.pendingPick = false;
   state.pendingReset = true;
   saveCache();
-  setHint("화면을 누르면 뽑습니다");
+  setHint("Draw를 눌러 뽑습니다");
+  updateDrawButton();
   renderDraw();
   try {
     await sendReset();
@@ -457,24 +478,33 @@ function toast(message) {
   toastTimer = setTimeout(() => { node.hidden = true; }, 2800);
 }
 
-function saveCache() {
+function readStore(storage) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({
-      groups: state.groups,
-      picked: state.picked,
-      winnerId: state.winnerId
-    }));
-  } catch (error) { /* ignore */ }
+    const data = JSON.parse(storage.getItem(CACHE_KEY) || "");
+    if (!data || !Array.isArray(data.picked)) return null;
+    return data;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveCache() {
+  const payload = JSON.stringify({
+    groups: state.groups,
+    picked: state.picked,
+    savedAt: Date.now()
+  });
+  try { localStorage.setItem(CACHE_KEY, payload); } catch (error) { /* ignore */ }
+  try { sessionStorage.setItem(CACHE_KEY, payload); } catch (error) { /* ignore */ }
 }
 
 function loadCache() {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    if (Array.isArray(data.groups) && data.groups.length) state.groups = data.groups.map(cloneGroup);
-    if (Array.isArray(data.picked)) state.picked = data.picked.map(String);
-  } catch (error) { /* ignore */ }
+  const local = readStore(localStorage);
+  const session = readStore(sessionStorage);
+  const data = !session ? local : !local ? session : ((session.savedAt || 0) >= (local.savedAt || 0) ? session : local);
+  if (!data) return;
+  if (Array.isArray(data.groups) && data.groups.length) state.groups = data.groups.map(cloneGroup);
+  if (Array.isArray(data.picked)) state.picked = data.picked.map(String);
 }
 
 function timeoutSignal(ms) {
@@ -546,9 +576,19 @@ async function refresh() {
   const doc = await request("GET");
   if (gen !== writeGen || state.spinning || state.adminOpen || state.pendingPick || state.pendingReset) return;
   state.groups = doc.groups.map(cloneGroup);
-  state.picked = doc.picked.map(String);
+  const remote = doc.picked.map(String);
+  const merged = [];
+  state.picked.concat(remote).forEach((id) => {
+    if (!merged.includes(id) && state.groups.some((group) => group.id === id)) merged.push(id);
+  });
+  const keepLocal = state.picked.some((id) => !remote.includes(id));
+  state.picked = merged;
   if (state.winnerId && !state.picked.includes(state.winnerId)) state.winnerId = "";
   saveCache();
+  if (keepLocal) {
+    state.pendingPick = true;
+    try { await sendPick(); } catch (error) { /* this browser keeps the record */ }
+  }
   if (viewKey() !== before) render();
 }
 
@@ -853,13 +893,8 @@ async function saveEditor(event) {
 
 function onStageClick(event) {
   const tab = event.target.closest("[data-class-index]");
-  if (tab) {
-    tab.parentNode.querySelectorAll(".class-tab").forEach((node) => node.classList.toggle("is-on", node === tab));
-    return;
-  }
-  if (pageName() !== "draw" || state.spinning) return;
-  if (event.target.closest("a")) return;
-  startDraw();
+  if (!tab) return;
+  tab.parentNode.querySelectorAll(".class-tab").forEach((node) => node.classList.toggle("is-on", node === tab));
 }
 
 function bind() {
@@ -871,6 +906,16 @@ function bind() {
   if (back) back.addEventListener("click", () => {
     if (history.length > 1) history.back();
     else location.href = "go.html";
+  });
+  const start = document.getElementById("start-draw");
+  if (start) start.addEventListener("click", startDraw);
+  window.addEventListener("resize", () => {
+    if (state.spinning || pageName() === "play") return;
+    render();
+  });
+  window.addEventListener("pageshow", () => {
+    loadCache();
+    if (pageName() !== "play") render();
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.adminOpen) closeAdmin();
