@@ -22,31 +22,31 @@ const SEED = [
     id: "power-a",
     name: "Power Shuffle - A",
     youtube: "https://www.youtube.com/watch?v=JNEAtmq6oTE&feature=shared",
-    classes: ["Light 2", "savior4", "savior3"]
+    classes: ["Light 2", "Savior4", "Savior3"]
   },
   {
     id: "power-b",
     name: "Power Shuffle - B",
     youtube: "https://www.youtube.com/watch?v=JNEAtmq6oTE&feature=shared",
-    classes: ["hope 1", "hope 2", "hope 3"]
+    classes: ["Hope 1", "Hope 2", "Hope 3"]
   },
   {
     id: "believe",
     name: "I Believe in Jesus",
     youtube: "https://www.youtube.com/watch?v=eg6El6aHO5c&feature=shared",
-    classes: ["love1", "love2", "savior1"]
+    classes: ["Love1", "Love2", "Savior1"]
   },
   {
     id: "armor-a",
     name: "Armor of God - A",
     youtube: "https://www.youtube.com/watch?v=3Ngbv7iUqMs&list=RD3Ngbv7iUqMs&start_radio=1",
-    classes: ["Savior2", "truth2", "Hope3"]
+    classes: ["Savior2", "Truth2", "Hope3"]
   },
   {
     id: "armor-b",
     name: "Armor of God - B",
     youtube: "https://www.youtube.com/watch?v=3Ngbv7iUqMs&list=RD3Ngbv7iUqMs&start_radio=1",
-    classes: ["Light1", "light4", "light5"]
+    classes: ["Light1", "Light4", "Light5"]
   }
 ];
 
@@ -75,12 +75,18 @@ let loginBusy = false;
 let toastTimer = 0;
 let polling = false;
 
+function classLabel(name) {
+  const text = String(name || "");
+  if (!text) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function cloneGroup(group) {
   return {
     id: group.id,
     name: group.name,
     youtube: group.youtube,
-    classes: group.classes.slice()
+    classes: group.classes.map(classLabel)
   };
 }
 
@@ -219,7 +225,7 @@ function renderGroup() {
       class: "play-link",
       href: "play.html?id=" + encodeURIComponent(group.id),
       target: "_parent",
-      text: "영상 재생"
+      text: "PLAY"
     })
     : el("p", { class: "class-name", text: "영상 주소가 없습니다" });
   stage.replaceChildren(title, list, play);
