@@ -71,10 +71,15 @@ button, a, input { font-family: inherit; }
   cursor: pointer;
 }
 
+.card.is-dim {
+  filter: blur(16px);
+  opacity: 0.4;
+  transition: filter 0.45s ease, opacity 0.45s ease;
+}
+
 .card.is-used {
-  opacity: 0.28;
-  filter: grayscale(0.85);
-  pointer-events: none;
+  filter: blur(3px);
+  opacity: 0.72;
 }
 
 .card.is-hot {

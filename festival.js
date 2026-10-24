@@ -54,6 +54,7 @@ const state = {
   groups: SEED.map(cloneGroup),
   picked: [],
   winnerId: "",
+  reveal: false,
   hotId: "",
   spinning: false,
   admin: false,
@@ -165,7 +166,7 @@ function render() {
   const key = document.getElementById("admin-open");
   if (key) key.classList.toggle("is-in", state.admin);
   if (pageName() === "draw" && !state.spinning) {
-    setHint(state.winnerId ? "선택된 이름을 누르면 조 화면으로 갑니다" : "화면을 누르면 뽑습니다");
+    setHint(state.reveal && state.winnerId ? "선택된 이름을 누르면 조 화면으로 갑니다" : "화면을 누르면 뽑습니다");
   }
 }
 
@@ -265,10 +266,11 @@ function renderDraw() {
   grid.style.marginTop = "0";
   state.groups.forEach((group, index) => {
     const used = state.picked.includes(group.id);
-    const winner = state.winnerId === group.id;
+    const winner = state.reveal && state.winnerId === group.id;
     const classes = ["card"];
-    if (used && !winner) classes.push("is-used");
     if (winner) classes.push("is-winner");
+    else if (state.reveal) classes.push("is-dim");
+    else if (used) classes.push("is-used");
     if (state.hotId === group.id) classes.push("is-hot");
     const attrs = {
       class: classes.join(" "),
@@ -276,7 +278,8 @@ function renderDraw() {
       style: "--c:" + pastel(index),
       text: group.name
     };
-    grid.append(winner
+    const openGroup = winner || (used && !state.reveal);
+    grid.append(openGroup
       ? el("a", Object.assign({ href: "group.html?id=" + encodeURIComponent(group.id) }, attrs))
       : el("button", Object.assign({ type: "button" }, attrs)));
   });
@@ -330,6 +333,7 @@ async function startDraw() {
     return;
   }
   state.spinning = true;
+  state.reveal = false;
   state.winnerId = "";
   state.hotId = "";
   renderDraw();
@@ -346,6 +350,7 @@ async function startDraw() {
   if (token !== spinToken) return;
   state.hotId = "";
   state.spinning = false;
+  state.reveal = true;
   state.winnerId = winner.id;
   if (!state.picked.includes(winner.id)) state.picked.push(winner.id);
   state.pendingPick = true;
@@ -367,6 +372,7 @@ async function resetDraw() {
   if (!window.confirm("뽑기 결과를 지우고 처음부터 다시 할까요?")) return;
   spinToken += 1;
   state.spinning = false;
+  state.reveal = false;
   state.hotId = "";
   state.winnerId = "";
   state.picked = [];
@@ -462,7 +468,6 @@ function loadCache() {
     const data = JSON.parse(raw);
     if (Array.isArray(data.groups) && data.groups.length) state.groups = data.groups.map(cloneGroup);
     if (Array.isArray(data.picked)) state.picked = data.picked.map(String);
-    if (typeof data.winnerId === "string") state.winnerId = data.winnerId;
   } catch (error) { /* ignore */ }
 }
 
