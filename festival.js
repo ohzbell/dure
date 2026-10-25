@@ -649,7 +649,10 @@ async function resetDraw() {
 
 function mountPlayer(id) {
   const fallback = document.getElementById("play-fallback");
+  let started = false;
   const start = () => {
+    if (started) return;
+    started = true;
     if (state.player && typeof state.player.playVideo === "function") {
       state.player.playVideo();
     } else {
@@ -666,11 +669,11 @@ function mountPlayer(id) {
   };
   if (fallback) fallback.addEventListener("click", start);
   window.onYouTubeIframeAPIReady = function () {
-    if (!document.getElementById("player") || !window.YT || !window.YT.Player) return;
+    if (started || !document.getElementById("player") || !window.YT || !window.YT.Player) return;
     state.player = new window.YT.Player("player", {
       videoId: id,
       playerVars: {
-        autoplay: 1,
+        autoplay: 0,
         rel: 0,
         modestbranding: 1,
         playsinline: 1,
@@ -679,9 +682,6 @@ function mountPlayer(id) {
         iv_load_policy: 3
       },
       events: {
-        onReady: (event) => {
-          try { event.target.playVideo(); } catch (error) { /* gesture may be required */ }
-        },
         onStateChange: (event) => {
           if (window.YT && event.data === window.YT.PlayerState.PLAYING && fallback) fallback.hidden = true;
         }
