@@ -156,14 +156,15 @@ function applyScoreDoc(doc) {
 function scoreTotal(key) {
   let sum = 0;
   let count = 0;
-  for (let index = 1; index <= state.judges; index += 1) {
-    const map = state.scores[String(index)];
-    if (!map || map[key] == null || map[key] === "") continue;
+  Object.keys(state.scores || {}).forEach((judge) => {
+    if (!/^[1-9][0-9]?$/.test(String(judge))) return;
+    const map = state.scores[judge];
+    if (!map || map[key] == null || map[key] === "") return;
     const value = Number(map[key]);
-    if (!Number.isFinite(value)) continue;
+    if (!Number.isFinite(value)) return;
     sum += value;
     count += 1;
-  }
+  });
   return { sum: sum, count: count };
 }
 
@@ -232,7 +233,7 @@ function renderScore() {
       pattern: "[0-9]*",
       enterkeyhint: "done",
       autocomplete: "off",
-      maxlength: "3",
+      maxlength: "4",
       "data-key": row.key,
       "aria-label": row.name + " 점수"
     });
@@ -282,8 +283,8 @@ function saveClassScore(judge, key, input, button) {
     input.focus();
     return;
   }
-  if (!/^\d{1,3}$/.test(raw) || Number(raw) > 100) {
-    window.alert("점수는 0점에서 100점까지 입력할 수 있습니다. 다시 입력해 주세요.");
+  if (!/^\d{1,4}$/.test(raw)) {
+    window.alert("점수는 0 이상의 숫자로 입력해 주세요.");
     input.value = saved == null ? "" : String(saved);
     input.focus();
     input.select();
@@ -346,62 +347,26 @@ function renderResult() {
   const stage = document.getElementById("stage");
   stage.classList.add("stage-result");
   const rows = ranking();
-  const key = JSON.stringify(rows.map((row) => [row.key, row.rank, row.pass, row.sum]));
+  const key = JSON.stringify(rows.map((row) => [row.key, row.rank, row.sum, row.count]));
   if (key === resultKey && stage.querySelector(".board")) return;
   resultKey = key;
   clearTimeout(resultTimer);
-  const passers = rows.filter((row) => row.pass).sort((left, right) => left.rank - right.rank || String(left.name).localeCompare(String(right.name), "ko"));
-  const fails = rows.filter((row) => !row.pass);
-  const steps = [];
-  passers.forEach((row) => {
-    if (!steps.includes(row.rank)) steps.push(row.rank);
-  });
-  steps.reverse();
   const board = el("ol", { class: "board" });
-  const rowNode = (row, quiet) => el("li", {
-    class: "board-row " + (row.pass ? "is-pass" : "is-out") + (quiet ? " is-quiet" : ""),
-    style: "--c:" + pastel(Math.max(row.rank, 1) - 1)
-  }, [
-    el("span", { class: "board-rank", text: row.rank ? String(row.rank) : "-" }),
-    el("span", { class: "board-name", text: row.name }),
-    el("span", { class: "board-group", text: row.group }),
-    el("span", { class: "board-mark", text: row.pass ? "합격" : "불합격" })
-  ]);
-  let shown = 0;
-  let failsShown = false;
-  const paint = (arrived) => {
-    const open = new Set(steps.slice(0, shown));
-    board.replaceChildren();
-    passers.forEach((row) => {
-      if (!open.has(row.rank)) return;
-      const node = rowNode(row, false);
-      if (row.rank === arrived) node.classList.add("is-arrive");
-      board.append(node);
-    });
-    if (!failsShown) return;
-    fails.forEach((row) => board.append(rowNode(row, true)));
-  };
-  const tick = () => {
-    if (!stage.querySelector(".board")) return;
-    if (shown < steps.length) {
-      shown += 1;
-      paint(steps[shown - 1]);
-      const latest = board.querySelector(".is-arrive");
-      if (latest) latest.scrollIntoView({ block: "nearest" });
-      resultTimer = setTimeout(tick, 800);
-      return;
-    }
-    if (!failsShown) {
-      failsShown = true;
-      paint(0);
-    }
-  };
+  rows.forEach((row) => {
+    board.append(el("li", {
+      class: "board-row is-pass",
+      style: "--c:" + pastel(Math.max(row.rank, 1) - 1)
+    }, [
+      el("span", { class: "board-rank", text: row.rank ? String(row.rank) : "-" }),
+      el("span", { class: "board-name", text: row.name }),
+      el("span", { class: "board-group", text: row.group }),
+      el("span", { class: "board-mark", text: row.count ? String(row.sum) : "-" })
+    ]));
+  });
   stage.replaceChildren(el("header", { class: "result-head" }, [
     el("h1", { text: "결과" }),
-    el("p", { class: "score-group", text: "합격 " + state.passRank + "위까지" })
+    el("p", { class: "score-group", text: "심사위원 점수 합산" })
   ]), board);
-  paint(0);
-  resultTimer = setTimeout(tick, 400);
 }
 
 function el(tag, attrs, children) {
