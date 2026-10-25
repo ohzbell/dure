@@ -533,6 +533,7 @@ a:focus-visible, button:focus-visible, input:focus-visible {
 .score-list {
   display: flex;
   flex-direction: column;
+  gap: 4px;
   margin: 0;
   padding: 0 0 24px;
 }
@@ -547,9 +548,10 @@ a:focus-visible, button:focus-visible, input:focus-visible {
 
 .score-row {
   flex: 0 0 auto;
-  min-height: 52px;
+  min-height: 64px;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) 64px 58px;
-  gap: 6px;
+  gap: 12px;
+  padding: 10px 0;
   border-bottom: 1px solid #222;
 }
 
