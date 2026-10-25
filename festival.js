@@ -153,15 +153,28 @@ function applyScoreDoc(doc) {
   state.scores = next;
 }
 
+function judgeNumbers() {
+  const set = new Set();
+  for (let index = 1; index <= state.judges; index += 1) set.add(index);
+  Object.keys(state.scores || {}).forEach((judge) => {
+    if (/^[1-9][0-9]?$/.test(String(judge))) set.add(Number(judge));
+  });
+  return Array.from(set).sort((left, right) => left - right);
+}
+
+function judgeScore(judge, key) {
+  const map = (state.scores || {})[String(judge)];
+  if (!map || map[key] == null || map[key] === "") return null;
+  const value = Number(map[key]);
+  return Number.isFinite(value) ? value : null;
+}
+
 function scoreTotal(key) {
   let sum = 0;
   let count = 0;
-  Object.keys(state.scores || {}).forEach((judge) => {
-    if (!/^[1-9][0-9]?$/.test(String(judge))) return;
-    const map = state.scores[judge];
-    if (!map || map[key] == null || map[key] === "") return;
-    const value = Number(map[key]);
-    if (!Number.isFinite(value)) return;
+  judgeNumbers().forEach((judge) => {
+    const value = judgeScore(judge, key);
+    if (value == null) return;
     sum += value;
     count += 1;
   });
@@ -346,8 +359,9 @@ async function sendScores() {
 function renderResult() {
   const stage = document.getElementById("stage");
   stage.classList.add("stage-result");
+  const judges = judgeNumbers();
   const rows = ranking();
-  const key = JSON.stringify(rows.map((row) => [row.key, row.rank, row.sum, row.count]));
+  const key = JSON.stringify(rows.map((row) => [row.key, row.rank, row.sum, row.count].concat(judges.map((judge) => judgeScore(judge, row.key)))));
   if (key === resultKey && stage.querySelector(".board")) return;
   resultKey = key;
   clearTimeout(resultTimer);
@@ -366,7 +380,28 @@ function renderResult() {
   stage.replaceChildren(el("header", { class: "result-head" }, [
     el("h1", { text: "결과" }),
     el("p", { class: "score-group", text: "심사위원 점수 합산" })
-  ]), board);
+  ]), board, scoreSheet(rows, judges));
+}
+
+function scoreSheet(rows, judges) {
+  const list = el("div", { class: "sheet" });
+  rows.forEach((row) => {
+    const parts = judges.map((judge) => {
+      const value = judgeScore(judge, row.key);
+      return value == null ? "" : judge + ") " + value;
+    }).filter(Boolean);
+    list.append(el("div", { class: "sheet-row" }, [
+      el("span", { class: "sheet-rank", text: row.rank ? String(row.rank) : "-" }),
+      el("span", { class: "sheet-name", text: row.name }),
+      el("span", { class: "sheet-group", text: row.group }),
+      el("span", { class: "sheet-sum", text: row.count ? String(row.sum) : "-" }),
+      el("span", { class: "sheet-calc", text: parts.length ? parts.join(" + ") : "-" })
+    ]));
+  });
+  return el("section", { class: "score-sheet" }, [
+    el("h2", { text: "반별 점수계산표" }),
+    list
+  ]);
 }
 
 function el(tag, attrs, children) {
