@@ -311,7 +311,13 @@ button, a, input { font-family: inherit; }
   font-weight: 700;
 }
 
-#reset-draw {
+.draw-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.draw-actions button {
   min-width: 200px;
   min-height: 68px;
   border: 3px solid #fff;
@@ -323,25 +329,10 @@ button, a, input { font-family: inherit; }
   cursor: pointer;
 }
 
-.draw-start {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  z-index: 7;
-  transform: translate(-50%, -50%);
-  min-width: min(72vw, 460px);
-  min-height: 128px;
-  border: 0;
-  border-radius: 999px;
+#start-draw {
   background: #fff;
   color: #000;
-  font-size: clamp(42px, 8vw, 92px);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
 }
-
-.draw-start[hidden] { display: none !important; }
 
 @media (max-width: 800px) {
   .stage { padding: 68px 3vw 12px; }
@@ -357,8 +348,9 @@ button, a, input { font-family: inherit; }
   .home-link, .draw-link, .back-link { width: 48px; height: 48px; }
   .home-link svg, .draw-link svg, .back-link svg { width: 30px; height: 30px; }
   .score-link, .result-link, .admin-link { width: 40px; height: 40px; }
-  .draw-start { min-height: 88px; font-size: clamp(36px, 12vw, 64px); }
-  #reset-draw { min-width: 140px; min-height: 48px; font-size: 20px; }
+  .draw-foot { left: 8px; right: 136px; width: auto; transform: none; }
+  .draw-actions { width: 100%; }
+  .draw-actions button { flex: 1 1 0; min-width: 0; min-height: 48px; font-size: 20px; }
   #draw-hint { font-size: 16px; }
 }
 
@@ -366,7 +358,7 @@ button, a, input { font-family: inherit; }
   .stage { padding-top: 56px; }
   .class-bar { flex-basis: 24px; }
   .class-tab { font-size: 13px; line-height: 1; }
-  .draw-start { min-height: 64px; }
+  .draw-actions button { min-height: 44px; font-size: 16px; }
   .play-link { height: 52px; }
 }
 

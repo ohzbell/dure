@@ -627,9 +627,7 @@ function wait(ms) {
 
 function updateDrawButton() {
   const button = document.getElementById("start-draw");
-  if (!button) return;
-  const left = state.groups.some((group) => !state.picked.includes(group.id));
-  button.hidden = state.spinning || state.reveal || !left;
+  if (button) button.hidden = false;
 }
 
 function buildRace(pool, winnerId) {
