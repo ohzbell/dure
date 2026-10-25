@@ -8,6 +8,7 @@ const LOGIN_FAIL_LIMIT = 5;
 const SESSION_KEY = "dure.admin.session.v1";
 const LOGIN_LOCK_KEY = "dure.admin.lock.v1";
 const CACHE_KEY = "pf.board.v1";
+const JUDGE_KEY = "pf.judge";
 
 const PASTELS = ["#ffb7c5", "#ffe08a", "#9cf0c6", "#9fd4ff", "#d7c4ff", "#ffc7a8"];
 
@@ -62,6 +63,11 @@ const state = {
   saving: false,
   pendingPick: false,
   pendingReset: false,
+  pendingScore: false,
+  judges: 4,
+  passRank: 10,
+  scores: {},
+  judgeNo: "",
   endpoint: "",
   key: "",
   player: null,
@@ -74,6 +80,7 @@ let loginSum = 0;
 let loginBusy = false;
 let toastTimer = 0;
 let polling = false;
+let scoreTimer = 0;
 
 function classLabel(name) {
   const text = String(name || "");
@@ -105,6 +112,219 @@ function currentGroup() {
 
 function pastel(index) {
   return PASTELS[index % PASTELS.length];
+}
+
+function clampCount(value, min, max, fallback) {
+  const number = Math.round(Number(value));
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
+function classKey(id, name) {
+  return id + "|" + name;
+}
+
+function classEntries() {
+  const rows = [];
+  state.groups.forEach((group) => {
+    group.classes.forEach((name) => {
+      rows.push({ key: classKey(group.id, name), name: name, group: group.name });
+    });
+  });
+  return rows;
+}
+
+function scoreObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value;
+}
+
+function applyScoreDoc(doc) {
+  state.judges = clampCount(doc.judges, 1, 12, state.judges || 4);
+  state.passRank = clampCount(doc.passRank, 1, 50, state.passRank || 10);
+  const remote = scoreObject(doc.scores);
+  if (!state.pendingScore) {
+    state.scores = remote;
+    return;
+  }
+  const mine = String(state.judgeNo || "");
+  const next = Object.assign({}, remote);
+  if (mine && state.scores[mine]) next[mine] = state.scores[mine];
+  state.scores = next;
+}
+
+function scoreTotal(key) {
+  let sum = 0;
+  let count = 0;
+  for (let index = 1; index <= state.judges; index += 1) {
+    const map = state.scores[String(index)];
+    if (!map || map[key] == null || map[key] === "") continue;
+    const value = Number(map[key]);
+    if (!Number.isFinite(value)) continue;
+    sum += value;
+    count += 1;
+  }
+  return { sum: sum, count: count };
+}
+
+function ranking() {
+  const rows = classEntries().map((row) => Object.assign(row, scoreTotal(row.key)));
+  rows.sort((left, right) => {
+    const scored = (right.count > 0 ? 1 : 0) - (left.count > 0 ? 1 : 0);
+    if (scored) return scored;
+    return right.sum - left.sum || String(left.name).localeCompare(String(right.name), "ko");
+  });
+  let rank = 0;
+  let previous = null;
+  let placed = 0;
+  rows.forEach((row) => {
+    if (!row.count) {
+      row.rank = 0;
+      row.pass = false;
+      return;
+    }
+    placed += 1;
+    if (previous === null || row.sum !== previous) rank = placed;
+    row.rank = rank;
+    previous = row.sum;
+    row.pass = rank <= state.passRank;
+  });
+  return rows;
+}
+
+function currentJudge() {
+  if (!/^[1-9][0-9]?$/.test(String(state.judgeNo || ""))) return 0;
+  const number = Number(state.judgeNo);
+  if (number < 1 || number > state.judges) return 0;
+  return number;
+}
+
+function renderScore() {
+  const stage = document.getElementById("stage");
+  stage.classList.add("stage-score");
+  const selected = currentJudge();
+  if (!selected) {
+    const columns = state.judges <= 2 ? state.judges : (state.judges <= 4 ? 2 : 3);
+    const grid = el("div", { class: "judge-grid" });
+    grid.style.gridTemplateColumns = "repeat(" + columns + ", minmax(0, 1fr))";
+    for (let index = 1; index <= state.judges; index += 1) {
+      const button = el("button", {
+        type: "button",
+        class: "judge-pick",
+        style: "--c:" + pastel(index - 1),
+        text: String(index)
+      });
+      button.addEventListener("click", () => chooseJudge(index));
+      grid.append(button);
+    }
+    stage.replaceChildren(el("header", { class: "score-head" }, [
+      el("h1", { text: "심사위원 번호" })
+    ]), grid);
+    return;
+  }
+  const list = el("div", { class: "score-list" });
+  const mine = state.scores[String(selected)] || {};
+  classEntries().forEach((row) => {
+    const input = el("input", {
+      class: "score-input",
+      type: "number",
+      min: "0",
+      max: "100",
+      inputmode: "numeric",
+      "data-key": row.key,
+      "aria-label": row.name + " 점수"
+    });
+    if (mine[row.key] != null) input.value = String(mine[row.key]);
+    input.addEventListener("input", () => onScoreInput(selected, row.key, input));
+    list.append(el("div", { class: "score-row" }, [
+      el("div", {}, [
+        el("span", { class: "score-name", text: row.name }),
+        el("span", { class: "score-group", text: row.group })
+      ]),
+      input
+    ]));
+  });
+  const change = el("button", { type: "button", class: "judge-switch", text: "번호 바꾸기" });
+  change.addEventListener("click", () => {
+    state.judgeNo = "";
+    try { sessionStorage.removeItem(JUDGE_KEY); } catch (error) { /* ignore */ }
+    renderScore();
+  });
+  stage.replaceChildren(el("header", { class: "score-head" }, [
+    el("h1", { text: "심사위원 " + selected }),
+    change
+  ]), list);
+}
+
+function chooseJudge(number) {
+  state.judgeNo = String(number);
+  try { sessionStorage.setItem(JUDGE_KEY, state.judgeNo); } catch (error) { /* ignore */ }
+  renderScore();
+}
+
+function onScoreInput(judge, key, input) {
+  const map = Object.assign({}, state.scores[String(judge)] || {});
+  const raw = input.value.trim();
+  if (raw === "") delete map[key];
+  else {
+    const value = clampCount(raw, 0, 100, NaN);
+    if (!Number.isFinite(value)) return;
+    map[key] = value;
+    if (String(value) !== raw) input.value = String(value);
+  }
+  state.scores[String(judge)] = map;
+  state.pendingScore = true;
+  saveCache();
+  clearTimeout(scoreTimer);
+  scoreTimer = setTimeout(sendScores, 400);
+}
+
+async function sendScores() {
+  const judge = String(state.judgeNo || "");
+  if (!judge) return;
+  const snapshot = JSON.stringify(state.scores[judge] || {});
+  const gen = ++writeGen;
+  try {
+    const doc = await request("POST", {
+      op: "score",
+      judge: judge,
+      scores: JSON.parse(snapshot)
+    });
+    if (gen !== writeGen) return;
+    if (JSON.stringify(state.scores[judge] || {}) !== snapshot) {
+      state.pendingScore = true;
+      scoreTimer = setTimeout(sendScores, 200);
+      return;
+    }
+    state.pendingScore = false;
+    applyScoreDoc(doc);
+    saveCache();
+  } catch (error) {
+    toast("점수를 서버에 저장하지 못했습니다.");
+  }
+}
+
+function renderResult() {
+  const stage = document.getElementById("stage");
+  stage.classList.add("stage-result");
+  const board = el("ol", { class: "board" });
+  ranking().forEach((row) => {
+    board.append(el("li", {
+      class: "board-row " + (row.pass ? "is-pass" : "is-out"),
+      style: "--c:" + pastel(row.rank - 1)
+    }, [
+      el("span", { class: "board-rank", text: row.rank ? String(row.rank) : "-" }),
+      el("span", {}, [
+        el("span", { class: "board-name", text: row.name }),
+        el("span", { class: "board-group", text: row.group })
+      ]),
+      el("span", { class: "board-score", text: row.count ? String(row.sum) : "-" })
+    ]));
+  });
+  stage.replaceChildren(el("header", { class: "result-head" }, [
+    el("h1", { text: "결과" }),
+    el("p", { class: "score-group", text: "합격 " + state.passRank + "위까지" })
+  ]), board);
 }
 
 function el(tag, attrs, children) {
@@ -164,6 +384,15 @@ function viewKey() {
       winner: state.winnerId
     });
   }
+  if (page === "score" || page === "result") {
+    return JSON.stringify({
+      judges: state.judges,
+      passRank: state.passRank,
+      scores: state.scores,
+      judgeNo: state.judgeNo,
+      classes: classEntries().map((row) => row.key)
+    });
+  }
   return JSON.stringify(state.groups.map((group) => [group.id, group.name]));
 }
 
@@ -173,6 +402,8 @@ function render() {
   else if (page === "group") renderGroup();
   else if (page === "play") renderPlay();
   else if (page === "draw") renderDraw();
+  else if (page === "score") renderScore();
+  else if (page === "result") renderResult();
   const key = document.getElementById("admin-open");
   if (key) key.classList.toggle("is-in", state.admin);
   if (pageName() === "draw" && !state.spinning) {
@@ -492,6 +723,9 @@ function saveCache() {
   const payload = JSON.stringify({
     groups: state.groups,
     picked: state.picked,
+    judges: state.judges,
+    passRank: state.passRank,
+    scores: state.scores,
     savedAt: Date.now()
   });
   try { localStorage.setItem(CACHE_KEY, payload); } catch (error) { /* ignore */ }
@@ -505,6 +739,9 @@ function loadCache() {
   if (!data) return;
   if (Array.isArray(data.groups) && data.groups.length) state.groups = data.groups.map(cloneGroup);
   if (Array.isArray(data.picked)) state.picked = data.picked.map(String);
+  if (Number.isFinite(Number(data.judges))) state.judges = clampCount(data.judges, 1, 12, 4);
+  if (Number.isFinite(Number(data.passRank))) state.passRank = clampCount(data.passRank, 1, 50, 10);
+  if (data.scores && typeof data.scores === "object") state.scores = scoreObject(data.scores);
 }
 
 function timeoutSignal(ms) {
@@ -584,12 +821,14 @@ async function refresh() {
   const keepLocal = state.picked.some((id) => !remote.includes(id));
   state.picked = merged;
   if (state.winnerId && !state.picked.includes(state.winnerId)) state.winnerId = "";
+  applyScoreDoc(doc);
   saveCache();
   if (keepLocal) {
     state.pendingPick = true;
     try { await sendPick(); } catch (error) { /* this browser keeps the record */ }
   }
-  if (viewKey() !== before) render();
+  const typing = pageName() === "score" && document.activeElement && document.activeElement.classList.contains("score-input");
+  if (!typing && viewKey() !== before) render();
 }
 
 async function sha256(text) {
@@ -668,6 +907,14 @@ function ensureModal() {
   ]);
   const editor = el("form", { class: "editor", id: "editor-form", hidden: "hidden" }, [
     el("h2", { text: "그룹 · 반 · 영상" }),
+    el("div", { class: "settings-row" }, [
+      el("label", { text: "심사위원 수" }, [
+        el("input", { id: "judge-count", type: "number", min: "1", max: "12", inputmode: "numeric" })
+      ]),
+      el("label", { text: "합격 순위" }, [
+        el("input", { id: "pass-rank", type: "number", min: "1", max: "50", inputmode: "numeric" })
+      ])
+    ]),
     el("div", { id: "admin-groups" }),
     el("div", { class: "actions" }, [
       el("button", { type: "button", id: "add-group", text: "그룹 추가" }),
@@ -813,6 +1060,10 @@ function classRow(name) {
 }
 
 function paintEditor() {
+  const judges = document.getElementById("judge-count");
+  const pass = document.getElementById("pass-rank");
+  if (judges) judges.value = String(state.judges);
+  if (pass) pass.value = String(state.passRank);
   const root = document.getElementById("admin-groups");
   root.replaceChildren();
   state.groups.forEach((group, index) => root.append(groupEditor(group, index + 1)));
@@ -875,10 +1126,14 @@ async function saveEditor(event) {
   state.saving = true;
   try {
     const gen = ++writeGen;
+    const judges = clampCount(document.getElementById("judge-count").value, 1, 12, 4);
+    const passRank = clampCount(document.getElementById("pass-rank").value, 1, 50, 10);
+    await request("POST", { op: "settings", judges: judges, passRank: passRank });
     const doc = await request("POST", { op: "groups", groups: groups });
     if (gen === writeGen) {
       state.groups = doc.groups.map(cloneGroup);
       state.picked = doc.picked.map(String);
+      applyScoreDoc(doc);
       if (state.winnerId && !state.picked.includes(state.winnerId)) state.winnerId = "";
       saveCache();
     }
@@ -923,6 +1178,7 @@ function bind() {
 }
 
 async function boot() {
+  try { state.judgeNo = sessionStorage.getItem(JUDGE_KEY) || ""; } catch (error) { state.judgeNo = ""; }
   loadCache();
   render();
   bind();
