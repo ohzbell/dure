@@ -555,7 +555,6 @@ function updateDrawButton() {
 }
 
 function buildRace(pool, winnerId) {
-  if (pool.length <= 1) return [{ id: winnerId, delay: 2000 }];
   const ids = pool.map((group) => group.id);
   const seq = [];
   let cursor = 0;
@@ -578,11 +577,32 @@ function buildRace(pool, winnerId) {
   return seq;
 }
 
+function finishDraw(winnerId) {
+  state.hotId = "";
+  state.spinning = false;
+  state.reveal = true;
+  state.winnerId = winnerId;
+  if (!state.picked.includes(winnerId)) state.picked.push(winnerId);
+  state.pendingPick = true;
+  saveCache();
+  setHint("선택된 이름을 누르면 조 화면으로 갑니다");
+  updateDrawButton();
+  renderDraw();
+  sendPick().catch(() => {
+    toast("서버에 저장하지 못했습니다. 이 브라우저에는 남아 있습니다.");
+  });
+}
+
 async function startDraw() {
   if (pageName() !== "draw" || state.spinning) return;
   const pool = state.groups.filter((group) => !state.picked.includes(group.id));
   if (!pool.length) {
     toast("뽑을 그룹이 없습니다. 초기화하면 다시 시작할 수 있습니다.");
+    return;
+  }
+  const winner = pool[Math.floor(Math.random() * pool.length)];
+  if (pool.length <= 1) {
+    finishDraw(winner.id);
     return;
   }
   state.spinning = true;
@@ -592,11 +612,8 @@ async function startDraw() {
   updateDrawButton();
   renderDraw();
   const token = ++spinToken;
-  const winner = pool[Math.floor(Math.random() * pool.length)];
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const seq = pool.length <= 1
-    ? [{ id: winner.id, delay: 2000 }]
-    : (reduce ? [{ id: winner.id, delay: 180 }] : buildRace(pool, winner.id));
+  const seq = reduce ? [{ id: winner.id, delay: 180 }] : buildRace(pool, winner.id);
   setHint("뽑는 중");
   for (let index = 0; index < seq.length; index += 1) {
     if (token !== spinToken) return;
@@ -604,21 +621,7 @@ async function startDraw() {
     await wait(seq[index].delay);
   }
   if (token !== spinToken) return;
-  state.hotId = "";
-  state.spinning = false;
-  state.reveal = true;
-  state.winnerId = winner.id;
-  if (!state.picked.includes(winner.id)) state.picked.push(winner.id);
-  state.pendingPick = true;
-  saveCache();
-  setHint("선택된 이름을 누르면 조 화면으로 갑니다");
-  updateDrawButton();
-  renderDraw();
-  try {
-    await sendPick();
-  } catch (error) {
-    toast("서버에 저장하지 못했습니다. 이 브라우저에는 남아 있습니다.");
-  }
+  finishDraw(winner.id);
 }
 
 async function resetDraw() {
