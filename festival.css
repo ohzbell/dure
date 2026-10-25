@@ -556,9 +556,23 @@ a:focus-visible, button:focus-visible, input:focus-visible {
 .score-row {
   flex: 0 0 auto;
   min-height: 56px;
-  grid-template-columns: minmax(0, 1fr) 110px;
+  grid-template-columns: minmax(0, 1fr) 110px auto;
   border-bottom: 1px solid #222;
 }
+
+.score-save {
+  min-width: 76px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+  color: #000;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.score-save:disabled { opacity: 0.55; }
 
 .score-name, .board-name {
   min-width: 0;
@@ -639,6 +653,7 @@ a:focus-visible, button:focus-visible, input:focus-visible {
 
 @media (max-width: 800px) {
   .board-row { grid-template-columns: 42px minmax(0, 1fr) auto; }
-  .score-row { grid-template-columns: minmax(0, 1fr) 84px; }
+  .score-row { grid-template-columns: minmax(0, 1fr) 72px auto; }
+  .score-save { min-width: 64px; font-size: 14px; }
   .judge-pick { font-size: clamp(32px, 10vw, 56px); border-width: 4px; }
 }

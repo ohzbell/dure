@@ -81,7 +81,6 @@ let loginSum = 0;
 let loginBusy = false;
 let toastTimer = 0;
 let polling = false;
-let scoreTimer = 0;
 
 function classLabel(name) {
   const text = String(name || "");
@@ -236,13 +235,15 @@ function renderScore() {
       "aria-label": row.name + " 점수"
     });
     if (mine[row.key] != null) input.value = String(mine[row.key]);
-    input.addEventListener("input", () => onScoreInput(selected, row.key, input));
+    const save = el("button", { type: "button", class: "score-save", text: "저장" });
+    save.addEventListener("click", () => saveClassScore(selected, row.key, input, save));
     list.append(el("div", { class: "score-row" }, [
       el("div", {}, [
         el("span", { class: "score-name", text: row.name }),
         el("span", { class: "score-group", text: row.group })
       ]),
-      input
+      input,
+      save
     ]));
   });
   const change = el("button", { type: "button", class: "judge-switch", text: "번호 바꾸기" });
@@ -263,45 +264,69 @@ function chooseJudge(number) {
   renderScore();
 }
 
-function onScoreInput(judge, key, input) {
-  const map = Object.assign({}, state.scores[String(judge)] || {});
+function saveClassScore(judge, key, input, button) {
   const raw = input.value.trim();
-  if (raw === "") delete map[key];
-  else {
-    const value = clampCount(raw, 0, 100, NaN);
-    if (!Number.isFinite(value)) return;
-    map[key] = value;
-    if (String(value) !== raw) input.value = String(value);
+  const saved = (state.scores[String(judge)] || {})[key];
+  if (raw === "") {
+    window.alert("점수를 입력해 주세요.");
+    input.focus();
+    return;
   }
+  if (!/^\d{1,3}$/.test(raw) || Number(raw) > 100) {
+    window.alert("점수는 0점에서 100점까지 입력할 수 있습니다. 다시 입력해 주세요.");
+    input.value = saved == null ? "" : String(saved);
+    input.focus();
+    input.select();
+    return;
+  }
+  const map = Object.assign({}, state.scores[String(judge)] || {});
+  map[key] = Number(raw);
   state.scores[String(judge)] = map;
+  input.value = String(map[key]);
   state.pendingScore = true;
   saveCache();
-  clearTimeout(scoreTimer);
-  scoreTimer = setTimeout(sendScores, 400);
+  button.disabled = true;
+  queueScoreSave().then((ok) => {
+    button.disabled = false;
+    if (!ok) return;
+    button.textContent = "저장됨";
+    setTimeout(() => {
+      if (button.isConnected) button.textContent = "저장";
+    }, 1200);
+  });
+}
+
+let scoreSave = Promise.resolve();
+
+function queueScoreSave() {
+  scoreSave = scoreSave.then(sendScores, sendScores);
+  return scoreSave;
 }
 
 async function sendScores() {
   const judge = String(state.judgeNo || "");
-  if (!judge) return;
-  const snapshot = JSON.stringify(state.scores[judge] || {});
-  const gen = ++writeGen;
+  if (!judge) return false;
+  state.pendingScore = true;
   try {
-    const doc = await request("POST", {
-      op: "score",
-      judge: judge,
-      scores: JSON.parse(snapshot)
-    });
-    if (gen !== writeGen) return;
-    if (JSON.stringify(state.scores[judge] || {}) !== snapshot) {
-      state.pendingScore = true;
-      scoreTimer = setTimeout(sendScores, 200);
-      return;
+    let doc;
+    for (;;) {
+      const snapshot = JSON.stringify(state.scores[judge] || {});
+      const gen = ++writeGen;
+      doc = await request("POST", {
+        op: "score",
+        judge: judge,
+        scores: JSON.parse(snapshot)
+      });
+      if (gen !== writeGen) return false;
+      if (JSON.stringify(state.scores[judge] || {}) === snapshot) break;
     }
     state.pendingScore = false;
     applyScoreDoc(doc);
     saveCache();
+    return true;
   } catch (error) {
     toast("점수를 서버에 저장하지 못했습니다.");
+    return false;
   }
 }
 
@@ -817,8 +842,18 @@ async function sendReset() {
   render();
 }
 
-function typingScore() {
-  return pageName() === "score" && document.activeElement && document.activeElement.classList.contains("score-input");
+function scoreFormDirty() {
+  if (pageName() !== "score" || !currentJudge()) return false;
+  const mine = state.scores[String(currentJudge())] || {};
+  return Array.from(document.querySelectorAll(".score-input")).some((input) => {
+    const key = input.getAttribute("data-key");
+    const saved = mine[key] == null ? "" : String(mine[key]);
+    return input.value.trim() !== saved;
+  });
+}
+
+function scoreFormBusy() {
+  return scoreFormDirty() || (pageName() === "score" && document.activeElement && document.activeElement.classList.contains("score-input"));
 }
 
 async function refresh() {
@@ -846,7 +881,7 @@ async function refresh() {
     state.winnerId = "";
     state.hotId = "";
     saveCache();
-    if (!typingScore() && viewKey() !== before) render();
+    if (!scoreFormBusy() && viewKey() !== before) render();
     return;
   }
   const merged = [];
@@ -861,7 +896,7 @@ async function refresh() {
     state.pendingPick = true;
     try { await sendPick(); } catch (error) { /* this browser keeps the record */ }
   }
-  if (!typingScore() && viewKey() !== before) render();
+  if (!scoreFormBusy() && viewKey() !== before) render();
 }
 
 async function sha256(text) {
