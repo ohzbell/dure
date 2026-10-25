@@ -1034,6 +1034,7 @@ function ensureModal() {
     ]),
     el("div", { id: "admin-groups" }),
     el("div", { class: "actions" }, [
+      el("button", { type: "button", id: "clear-scores", text: "점수 초기화" }),
       el("button", { type: "button", id: "add-group", text: "그룹 추가" }),
       el("button", { class: "primary", type: "submit", text: "저장" }),
       el("button", { type: "button", id: "admin-logout", text: "로그아웃" }),
@@ -1057,6 +1058,7 @@ function ensureModal() {
       classes: [""]
     }, document.querySelectorAll("#admin-groups fieldset").length + 1));
   });
+  document.getElementById("clear-scores").addEventListener("click", clearScores);
   document.getElementById("admin-groups").addEventListener("click", onEditorClick);
 }
 
@@ -1174,6 +1176,27 @@ function classRow(name) {
     el("button", { type: "button", "data-act": "down-class", text: "아래" }),
     el("button", { type: "button", "data-act": "del-class", text: "삭제" })
   ]);
+}
+
+async function clearScores() {
+  if (!window.confirm("입력된 점수를 모두 지울까요?")) return;
+  const button = document.getElementById("clear-scores");
+  if (button) button.disabled = true;
+  try {
+    const gen = ++writeGen;
+    const doc = await request("POST", { op: "clear-scores" });
+    if (gen !== writeGen) return;
+    state.pendingScore = false;
+    applyScoreDoc(doc);
+    saveCache();
+    resultKey = "";
+    if (pageName() === "score" || pageName() === "result") render();
+    toast("점수를 초기화했습니다.");
+  } catch (error) {
+    toast("점수를 지우지 못했습니다.");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function paintEditor() {
