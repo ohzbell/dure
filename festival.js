@@ -256,7 +256,7 @@ function renderScore() {
       save.click();
     });
   });
-  const change = el("button", { type: "button", class: "judge-switch", text: "번호 바꾸기" });
+  const change = el("button", { type: "button", class: "judge-switch", text: "심사위원 번호 변경" });
   change.addEventListener("click", () => {
     state.judgeNo = "";
     try { sessionStorage.removeItem(JUDGE_KEY); } catch (error) { /* ignore */ }
