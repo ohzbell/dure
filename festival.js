@@ -63,6 +63,7 @@ const state = {
   saving: false,
   pendingPick: false,
   pendingReset: false,
+  epoch: 0,
   pendingScore: false,
   judges: 4,
   passRank: 10,
@@ -381,6 +382,7 @@ function viewKey() {
     return JSON.stringify({
       groups: state.groups.map((group) => [group.id, group.name]),
       picked: state.picked,
+      epoch: state.epoch,
       winner: state.winnerId
     });
   }
@@ -644,7 +646,6 @@ async function resetDraw() {
   renderDraw();
   try {
     await sendReset();
-    toast("뽑기를 처음부터 다시 할 수 있습니다.");
   } catch (error) {
     toast("서버에서 지우지 못했습니다. 이 화면에서는 지워 두었습니다.");
   }
@@ -726,6 +727,7 @@ function saveCache() {
   const payload = JSON.stringify({
     groups: state.groups,
     picked: state.picked,
+    epoch: state.epoch,
     judges: state.judges,
     passRank: state.passRank,
     scores: state.scores,
@@ -742,6 +744,7 @@ function loadCache() {
   if (!data) return;
   if (Array.isArray(data.groups) && data.groups.length) state.groups = data.groups.map(cloneGroup);
   if (Array.isArray(data.picked)) state.picked = data.picked.map(String);
+  if (Number.isFinite(Number(data.epoch))) state.epoch = Math.max(0, Math.round(Number(data.epoch)));
   if (Number.isFinite(Number(data.judges))) state.judges = clampCount(data.judges, 1, 12, 4);
   if (Number.isFinite(Number(data.passRank))) state.passRank = clampCount(data.passRank, 1, 50, 10);
   if (data.scores && typeof data.scores === "object") state.scores = scoreObject(data.scores);
@@ -784,11 +787,19 @@ async function request(method, body) {
 
 async function sendPick() {
   const gen = ++writeGen;
-  const doc = await request("POST", { op: "pick", picked: state.picked });
+  const sentEpoch = state.epoch;
+  const doc = await request("POST", { op: "pick", picked: state.picked, epoch: sentEpoch });
   if (gen !== writeGen) return;
   state.pendingPick = false;
-  state.picked = doc.picked;
+  state.epoch = Number(doc.epoch) || 0;
+  state.picked = doc.picked.map(String);
+  if (state.epoch !== sentEpoch || (state.winnerId && !state.picked.includes(state.winnerId))) {
+    state.winnerId = "";
+    state.reveal = false;
+    state.hotId = "";
+  }
   saveCache();
+  if (pageName() === "draw" && !state.spinning) render();
 }
 
 async function sendReset() {
@@ -796,10 +807,18 @@ async function sendReset() {
   const doc = await request("POST", { op: "reset" });
   if (gen !== writeGen) return;
   state.pendingReset = false;
-  state.picked = doc.picked;
-  if (!state.picked.includes(state.winnerId)) state.winnerId = "";
+  state.pendingPick = false;
+  state.epoch = Number(doc.epoch) || 0;
+  state.picked = doc.picked.map(String);
+  state.reveal = false;
+  state.winnerId = "";
+  state.hotId = "";
   saveCache();
   render();
+}
+
+function typingScore() {
+  return pageName() === "score" && document.activeElement && document.activeElement.classList.contains("score-input");
 }
 
 async function refresh() {
@@ -816,7 +835,20 @@ async function refresh() {
   const doc = await request("GET");
   if (gen !== writeGen || state.spinning || state.adminOpen || state.pendingPick || state.pendingReset) return;
   state.groups = doc.groups.map(cloneGroup);
+  applyScoreDoc(doc);
+  const remoteEpoch = Number(doc.epoch) || 0;
   const remote = doc.picked.map(String);
+  if (remoteEpoch !== state.epoch) {
+    state.epoch = remoteEpoch;
+    state.picked = remote;
+    state.pendingPick = false;
+    state.reveal = false;
+    state.winnerId = "";
+    state.hotId = "";
+    saveCache();
+    if (!typingScore() && viewKey() !== before) render();
+    return;
+  }
   const merged = [];
   state.picked.concat(remote).forEach((id) => {
     if (!merged.includes(id) && state.groups.some((group) => group.id === id)) merged.push(id);
@@ -824,14 +856,12 @@ async function refresh() {
   const keepLocal = state.picked.some((id) => !remote.includes(id));
   state.picked = merged;
   if (state.winnerId && !state.picked.includes(state.winnerId)) state.winnerId = "";
-  applyScoreDoc(doc);
   saveCache();
   if (keepLocal) {
     state.pendingPick = true;
     try { await sendPick(); } catch (error) { /* this browser keeps the record */ }
   }
-  const typing = pageName() === "score" && document.activeElement && document.activeElement.classList.contains("score-input");
-  if (!typing && viewKey() !== before) render();
+  if (!typingScore() && viewKey() !== before) render();
 }
 
 async function sha256(text) {
