@@ -227,10 +227,12 @@ function renderScore() {
   classEntries().forEach((row) => {
     const input = el("input", {
       class: "score-input",
-      type: "number",
-      min: "0",
-      max: "100",
+      type: "text",
       inputmode: "numeric",
+      pattern: "[0-9]*",
+      enterkeyhint: "done",
+      autocomplete: "off",
+      maxlength: "3",
       "data-key": row.key,
       "aria-label": row.name + " 점수"
     });
@@ -238,13 +240,21 @@ function renderScore() {
     const save = el("button", { type: "button", class: "score-save", text: "저장" });
     save.addEventListener("click", () => saveClassScore(selected, row.key, input, save));
     list.append(el("div", { class: "score-row" }, [
-      el("div", {}, [
-        el("span", { class: "score-name", text: row.name }),
-        el("span", { class: "score-group", text: row.group })
-      ]),
+      el("span", { class: "score-name", text: row.name }),
+      el("span", { class: "score-group", text: row.group }),
       input,
       save
     ]));
+    input.addEventListener("focus", () => {
+      window.setTimeout(() => {
+        if (input.isConnected) input.scrollIntoView({ block: "center", inline: "nearest" });
+      }, 280);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      save.click();
+    });
   });
   const change = el("button", { type: "button", class: "judge-switch", text: "번호 바꾸기" });
   change.addEventListener("click", () => {
@@ -297,6 +307,8 @@ function saveClassScore(judge, key, input, button) {
 }
 
 let scoreSave = Promise.resolve();
+let resultTimer = 0;
+let resultKey = "";
 
 function queueScoreSave() {
   scoreSave = scoreSave.then(sendScores, sendScores);
@@ -333,24 +345,63 @@ async function sendScores() {
 function renderResult() {
   const stage = document.getElementById("stage");
   stage.classList.add("stage-result");
-  const board = el("ol", { class: "board" });
-  ranking().forEach((row) => {
-    board.append(el("li", {
-      class: "board-row " + (row.pass ? "is-pass" : "is-out"),
-      style: "--c:" + pastel(row.rank - 1)
-    }, [
-      el("span", { class: "board-rank", text: row.rank ? String(row.rank) : "-" }),
-      el("span", {}, [
-        el("span", { class: "board-name", text: row.name }),
-        el("span", { class: "board-group", text: row.group })
-      ]),
-      el("span", { class: "board-score", text: row.count ? String(row.sum) : "-" })
-    ]));
+  const rows = ranking();
+  const key = JSON.stringify(rows.map((row) => [row.key, row.rank, row.pass, row.sum]));
+  if (key === resultKey && stage.querySelector(".board")) return;
+  resultKey = key;
+  clearTimeout(resultTimer);
+  const passers = rows.filter((row) => row.pass).sort((left, right) => left.rank - right.rank || String(left.name).localeCompare(String(right.name), "ko"));
+  const fails = rows.filter((row) => !row.pass);
+  const steps = [];
+  passers.forEach((row) => {
+    if (!steps.includes(row.rank)) steps.push(row.rank);
   });
+  steps.reverse();
+  const board = el("ol", { class: "board" });
+  const rowNode = (row, quiet) => el("li", {
+    class: "board-row " + (row.pass ? "is-pass" : "is-out") + (quiet ? " is-quiet" : ""),
+    style: "--c:" + pastel(Math.max(row.rank, 1) - 1)
+  }, [
+    el("span", { class: "board-rank", text: row.rank ? String(row.rank) : "-" }),
+    el("span", { class: "board-name", text: row.name }),
+    el("span", { class: "board-group", text: row.group }),
+    el("span", { class: "board-mark", text: row.pass ? "합격" : "불합격" })
+  ]);
+  let shown = 0;
+  let failsShown = false;
+  const paint = (arrived) => {
+    const open = new Set(steps.slice(0, shown));
+    board.replaceChildren();
+    passers.forEach((row) => {
+      if (!open.has(row.rank)) return;
+      const node = rowNode(row, false);
+      if (row.rank === arrived) node.classList.add("is-arrive");
+      board.append(node);
+    });
+    if (!failsShown) return;
+    fails.forEach((row) => board.append(rowNode(row, true)));
+  };
+  const tick = () => {
+    if (!stage.querySelector(".board")) return;
+    if (shown < steps.length) {
+      shown += 1;
+      paint(steps[shown - 1]);
+      const latest = board.querySelector(".is-arrive");
+      if (latest) latest.scrollIntoView({ block: "nearest" });
+      resultTimer = setTimeout(tick, 800);
+      return;
+    }
+    if (!failsShown) {
+      failsShown = true;
+      paint(0);
+    }
+  };
   stage.replaceChildren(el("header", { class: "result-head" }, [
     el("h1", { text: "결과" }),
     el("p", { class: "score-group", text: "합격 " + state.passRank + "위까지" })
   ]), board);
+  paint(0);
+  resultTimer = setTimeout(tick, 400);
 }
 
 function el(tag, attrs, children) {
@@ -1233,7 +1284,8 @@ function bind() {
   const start = document.getElementById("start-draw");
   if (start) start.addEventListener("click", startDraw);
   window.addEventListener("resize", () => {
-    if (state.spinning || pageName() === "play") return;
+    const page = pageName();
+    if (state.spinning || page === "play" || page === "score" || page === "result") return;
     render();
   });
   window.addEventListener("pageshow", () => {
