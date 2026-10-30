@@ -310,7 +310,7 @@ function cueSrc() {
   if (state.doc.cueCustom && state.endpoint && state.key) {
     return state.endpoint + "?cue=1&k=" + encodeURIComponent(state.key) + "&v=" + encodeURIComponent(state.doc.cueRev || 0);
   }
-  return "live-beep.wav?v=2";
+  return "live-beep.wav?v=3";
 }
 
 function loadYouTube() {
@@ -830,7 +830,7 @@ function cueBlock() {
   const name = state.doc.cueCustom ? (state.doc.cueName || "올린 음향") : "기본 음향";
   const block = el("section", { class: "desk-block" }, [
     el("h2", { text: "랜덤플레이 사이 음향" }),
-    el("p", { class: "desk-note", text: "기본 음향은 짧은 소리 세 번 뒤에 높은 소리입니다. 다른 파일을 올리면 그 소리로 바뀌고, 기본 음향일 때만 화면에 3, 2, 1이 나옵니다." }),
+    el("p", { class: "desk-note", text: "기본 음향은 짧은 소리 세 번 뒤에 같은 음의 긴 소리입니다. 다른 파일을 올리면 그 소리로 바뀌고, 기본 음향일 때만 화면에 3, 2, 1이 나옵니다." }),
     el("p", { class: "desk-note", text: "지금 소리: " + name })
   ]);
   const use = el("input", { type: "checkbox", id: "cue-on" });
