@@ -310,7 +310,7 @@ function cueSrc() {
   if (state.doc.cueCustom && state.endpoint && state.key) {
     return state.endpoint + "?cue=1&k=" + encodeURIComponent(state.key) + "&v=" + encodeURIComponent(state.doc.cueRev || 0);
   }
-  return "live-beep.wav?v=1";
+  return "live-beep.wav?v=2";
 }
 
 function loadYouTube() {
@@ -433,7 +433,7 @@ function showMarks() {
   clearMarks();
   if (state.doc.cueCustom) return;
   const count = document.getElementById("count");
-  [[0, "3"], [570, "2"], [1140, "1"], [1710, ""]].forEach(([at, text]) => {
+  [[0, "3"], [1000, "2"], [2000, "1"], [3000, ""]].forEach(([at, text]) => {
     markTimers.push(setTimeout(() => {
       if (state.counting === false) return;
       if (!text) {
