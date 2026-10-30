@@ -699,6 +699,7 @@ function renderDesk() {
   }
   desk.replaceChildren(editorCard());
   bindEditor();
+  requestAnimationFrame(markLongTitles);
 }
 
 function deskTabs() {
@@ -745,7 +746,7 @@ function editorCard() {
     });
     const row = el("div", { class: "desk-tab-row" + (tab.fixed ? " is-fixed" : "") });
     row.setAttribute("data-id", tab.id);
-    if (!tab.fixed) row.append(el("button", { type: "button", class: "handle", text: "↕", "aria-label": "순서 변경" }));
+    if (!tab.fixed) row.append(grip());
     row.append(button);
     (tab.fixed ? nav : movable).append(row);
   });
@@ -792,7 +793,7 @@ function videoBlock() {
     };
     title.addEventListener("change", save);
     url.addEventListener("change", save);
-    const remove = el("button", { type: "button", class: "ghost", text: "삭제" });
+    const remove = el("button", { type: "button", class: "ghost mark", text: "−", "aria-label": "삭제" });
     remove.addEventListener("click", () => {
       if (!window.confirm("이 영상을 목록에서 지울까요?")) return;
       state.doc.videos = state.doc.videos.filter((item) => item.id !== video.id);
@@ -809,7 +810,7 @@ function videoBlock() {
   });
   const title = el("input", { id: "new-title", placeholder: "제목", maxlength: "80" });
   const url = el("input", { id: "new-url", placeholder: "유튜브 주소", maxlength: "400" });
-  const add = el("button", { type: "button", text: "추가" });
+  const add = el("button", { type: "button", class: "mark", text: "+", "aria-label": "추가" });
   add.addEventListener("click", () => {
     const nextTitle = title.value.trim();
     const nextUrl = url.value.trim();
@@ -955,7 +956,7 @@ function clipRow(item, items, withLyrics) {
   const video = findVideo(item.video);
   const row = el("div", { class: "clip" });
   row.setAttribute("data-id", item.id);
-  const handle = el("button", { type: "button", class: "handle", text: "↕", "aria-label": "순서 변경" });
+  const handle = grip();
   const grow = el("div", { class: "grow" }, [
     el("strong", { text: video ? video.title : "지워진 영상" })
   ]);
@@ -976,7 +977,7 @@ function clipRow(item, items, withLyrics) {
   };
   start.addEventListener("change", applyTime);
   end.addEventListener("change", applyTime);
-  const remove = el("button", { type: "button", class: "ghost", text: "삭제" });
+  const remove = el("button", { type: "button", class: "ghost mark", text: "−", "aria-label": "삭제" });
   remove.addEventListener("click", () => {
     const index = items.findIndex((clip) => clip.id === item.id);
     if (index >= 0) items.splice(index, 1);
@@ -1038,7 +1039,7 @@ function adder(items, withLyrics) {
   const start = el("input", { class: "time", placeholder: "시작", "aria-label": "시작 시간" });
   const end = el("input", { class: "time", placeholder: "끝", "aria-label": "종료 시간" });
   const lyrics = withLyrics ? el("textarea", { placeholder: "가사", maxlength: "4000" }) : null;
-  const add = el("button", { type: "button", text: "추가" });
+  const add = el("button", { type: "button", class: "mark", text: "+", "aria-label": "추가" });
   add.addEventListener("click", () => {
     const video = state.doc.videos.find((item) => item.id === picked) || state.doc.videos.find((item) => item.title === input.value.trim());
     if (!video) {
@@ -1063,70 +1064,86 @@ function adder(items, withLyrics) {
   return wrap;
 }
 
+function grip() {
+  const handle = el("span", { class: "handle", role: "button", tabindex: "0", "aria-label": "순서 변경" });
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 12");
+  svg.setAttribute("aria-hidden", "true");
+  [1, 5.2, 9.4].forEach((y) => {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    line.setAttribute("x", "1");
+    line.setAttribute("y", String(y));
+    line.setAttribute("width", "14");
+    line.setAttribute("height", "1.6");
+    line.setAttribute("rx", "0.8");
+    line.setAttribute("fill", "currentColor");
+    svg.append(line);
+  });
+  handle.append(svg);
+  return handle;
+}
+
+function markLongTitles() {
+  document.querySelectorAll(".clip .grow strong").forEach((node) => {
+    if (node.scrollWidth > node.clientWidth + 1) node.title = node.textContent;
+    else node.removeAttribute("title");
+  });
+}
+
+function bindRowDrag(handle, rowSelector, container, onDrop) {
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button != null && event.button !== 0) return;
+    const row = handle.closest(rowSelector);
+    if (!row || !container.contains(row)) return;
+    event.preventDefault();
+    state.dragging = true;
+    row.classList.add("is-dragging");
+    const pointerId = event.pointerId;
+    try { handle.setPointerCapture(pointerId); } catch (error) { /* pointer already released */ }
+    let done = false;
+    const move = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      const rows = Array.from(container.children).filter((item) => item.matches(rowSelector));
+      const target = rows.find((item) => {
+        const box = item.getBoundingClientRect();
+        return ev.clientY < box.top + box.height / 2;
+      });
+      if (target && target !== row) container.insertBefore(row, target);
+      else if (!target && container.lastElementChild !== row) container.append(row);
+    };
+    const finish = (ev) => {
+      if (done) return;
+      if (ev && ev.pointerId != null && ev.pointerId !== pointerId) return;
+      done = true;
+      state.dragging = false;
+      row.classList.remove("is-dragging");
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", finish);
+      document.removeEventListener("pointercancel", finish);
+      onDrop();
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", finish);
+    document.addEventListener("pointercancel", finish);
+  });
+}
+
 function enableTabDrag(nav) {
   nav.querySelectorAll(".handle").forEach((handle) => {
-    handle.addEventListener("pointerdown", (event) => {
-      if (event.button != null && event.button !== 0) return;
-      event.preventDefault();
-      state.dragging = true;
-      const row = handle.closest(".desk-tab-row");
-      try { handle.setPointerCapture(event.pointerId); } catch (error) { /* pointer already released */ }
-      let done = false;
-      const move = (ev) => {
-        const rows = Array.from(nav.querySelectorAll(".desk-tab-row"));
-        const target = rows.find((item) => {
-          const box = item.getBoundingClientRect();
-          return ev.clientY < box.top + box.height / 2;
-        });
-        if (target && target !== row) nav.insertBefore(row, target);
-        else if (!target && nav.lastElementChild !== row) nav.append(row);
-      };
-      const finish = () => {
-        if (done) return;
-        done = true;
-        state.dragging = false;
-        handle.removeEventListener("pointermove", move);
-        state.doc.tabOrder = Array.from(nav.querySelectorAll(".desk-tab-row")).map((item) => item.getAttribute("data-id"));
-        queueSave();
-      };
-      handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", finish, { once: true });
-      handle.addEventListener("pointercancel", finish, { once: true });
+    bindRowDrag(handle, ".desk-tab-row", nav, () => {
+      state.doc.tabOrder = Array.from(nav.querySelectorAll(".desk-tab-row")).map((item) => item.getAttribute("data-id"));
+      queueSave();
     });
   });
 }
 
 function enableDrag(list, items) {
   list.querySelectorAll(".handle").forEach((handle) => {
-    handle.addEventListener("pointerdown", (event) => {
-      if (event.button != null && event.button !== 0) return;
-      event.preventDefault();
-      state.dragging = true;
-      const row = handle.closest(".clip");
-      try { handle.setPointerCapture(event.pointerId); } catch (error) { /* pointer already released */ }
-      let done = false;
-      const move = (ev) => {
-        const rows = Array.from(list.querySelectorAll(".clip"));
-        const target = rows.find((item) => {
-          const box = item.getBoundingClientRect();
-          return ev.clientY < box.top + box.height / 2;
-        });
-        if (target && target !== row) list.insertBefore(row, target);
-        else if (!target && list.lastElementChild !== row) list.append(row);
-      };
-      const finish = () => {
-        if (done) return;
-        done = true;
-        state.dragging = false;
-        handle.removeEventListener("pointermove", move);
-        const order = Array.from(list.querySelectorAll(".clip")).map((item) => item.getAttribute("data-id"));
-        const next = order.map((id) => items.find((item) => item.id === id)).filter(Boolean);
-        items.splice(0, items.length, ...next);
-        queueSave();
-      };
-      handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", finish, { once: true });
-      handle.addEventListener("pointercancel", finish, { once: true });
+    bindRowDrag(handle, ".clip", list, () => {
+      const order = Array.from(list.querySelectorAll(".clip")).map((item) => item.getAttribute("data-id"));
+      const next = order.map((id) => items.find((item) => item.id === id)).filter(Boolean);
+      items.splice(0, items.length, ...next);
+      queueSave();
     });
   });
 }
