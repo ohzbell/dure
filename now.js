@@ -29,6 +29,7 @@ const state = {
   videoVisible: true,
   listOpen: false,
   counting: false,
+  randomPhase: "start",
   loadedId: "",
   needRestart: true,
   dragging: false,
@@ -355,14 +356,53 @@ function onPlayerState(event) {
   if (event.data === 1) armEnd = true;
   if (event.data !== 0 || !armEnd) return;
   armEnd = false;
-  if (pageId() !== "random" || state.counting || state.desk) return;
+  if (state.counting || state.desk) return;
   const clips = clipsForPage();
   const current = clips[state.clip];
   if (!current || current.clipId !== state.loadedId) return;
   state.loadedId = "";
-  state.clip = (state.clip + 1) % clips.length;
+  state.needRestart = true;
+  if (pageId() === "random") {
+    if (state.randomPhase !== "play") return;
+    if (state.clip >= clips.length - 1) {
+      finishRandom();
+      return;
+    }
+    state.clip += 1;
+    countdownThenPlay(playGen);
+    return;
+  }
+  if (state.clip < clips.length - 1) {
+    state.clip += 1;
+    state.revealed = false;
+    state.lyricsShown = false;
+    state.videoVisible = true;
+  }
+  stopVideo();
+  paint();
+}
+
+function startRandom() {
+  if (!clipsForPage().length) {
+    toast("이 화면에 넣은 영상이 없습니다.");
+    return;
+  }
+  stopCue();
+  stopVideo();
+  state.randomPhase = "play";
+  state.clip = 0;
+  state.revealed = false;
+  state.lyricsShown = false;
+  state.videoVisible = true;
   state.needRestart = true;
   countdownThenPlay(playGen);
+}
+
+function finishRandom() {
+  stopCue();
+  stopVideo();
+  state.randomPhase = "finish";
+  paint();
 }
 
 function loadClip(clip, autoplay) {
@@ -483,34 +523,40 @@ function nextTrack() {
   stopVideo();
   stopCue();
   const gen = playGen;
-  state.clip = (state.clip + 1) % clips.length;
   state.revealed = false;
   state.lyricsShown = false;
+  state.videoVisible = true;
   state.needRestart = true;
-  paint();
   if (pageId() === "random") {
+    if (state.randomPhase !== "play") return;
+    if (state.clip >= clips.length - 1) {
+      finishRandom();
+      return;
+    }
+    state.clip += 1;
+    paint();
     countdownThenPlay(gen);
     return;
   }
-  if (pageId() === "guess") {
-    stopVideo();
-    return;
-  }
-  playCurrent();
+  state.clip = (state.clip + 1) % clips.length;
+  paint();
 }
 
 function jumpTo(index) {
   stopCue();
+  stopVideo();
   state.clip = index;
   state.revealed = false;
   state.lyricsShown = false;
+  state.videoVisible = true;
   state.needRestart = true;
-  paint();
-  if (pageId() === "guess") {
-    stopVideo();
+  if (pageId() === "random") {
+    state.randomPhase = "play";
+    paint();
+    playCurrent();
     return;
   }
-  playCurrent();
+  paint();
 }
 
 function goNextPage() {
@@ -551,6 +597,7 @@ function setPage(index) {
   state.revealed = false;
   state.lyricsShown = false;
   state.videoVisible = true;
+  if (pages[state.page].id === "random") state.randomPhase = "start";
   history.replaceState(null, "", "#" + pages[state.page].id);
   paint();
 }
@@ -569,6 +616,7 @@ function syncVeil() {
 function subtitle() {
   const clip = currentClip();
   if (!clip || state.counting) return "";
+  if (pageId() === "random" && state.randomPhase !== "play") return "";
   const id = pageId();
   if (id === "guess" || id === "lyrics") return "";
   if (clip.gradeName) return clip.gradeName + " · " + clip.title;
@@ -585,7 +633,8 @@ function stageKey() {
     revealed: state.revealed,
     lyricsShown: state.lyricsShown,
     video: state.videoVisible,
-    counting: state.counting
+    counting: state.counting,
+    random: state.randomPhase
   });
 }
 
@@ -609,6 +658,16 @@ function paintStage() {
   stage.replaceChildren();
   const id = pageId();
   const clip = currentClip();
+  if (id === "random" && state.randomPhase === "start") {
+    const button = el("button", { type: "button", class: "answer", text: "Start" });
+    button.addEventListener("click", startRandom);
+    stage.append(button);
+    return;
+  }
+  if (id === "random" && state.randomPhase === "finish") {
+    stage.append(el("p", { class: "finish-show", text: "Finish!" }));
+    return;
+  }
   if (id === "guess" && !state.revealed) {
     const button = el("button", { type: "button", class: "answer", text: "정답" });
     button.addEventListener("click", () => {
@@ -1265,6 +1324,7 @@ function bindShow() {
   document.getElementById("page-prev").addEventListener("click", () => setPage(state.page - 1));
   document.getElementById("page-next").addEventListener("click", goNextPage);
   document.getElementById("play").addEventListener("click", () => {
+    if (pageId() === "random" && state.randomPhase !== "play") return;
     const clip = currentClip();
     if (pageId() === "guess" && !state.revealed) return;
     let code = -1;
