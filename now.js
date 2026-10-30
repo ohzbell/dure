@@ -34,6 +34,7 @@ const state = {
   dragging: false,
   saving: false,
   admin: false,
+  deskTab: "videos",
   doc: emptyDoc(),
   endpoint: "",
   key: ""
@@ -642,12 +643,23 @@ function renderDesk() {
   document.title = "찬양 진행 관리";
   const desk = document.getElementById("desk");
   if (!state.admin) {
+    document.body.classList.remove("desk-open");
     desk.replaceChildren(loginCard());
     document.getElementById("login-form").addEventListener("submit", submitLogin);
     return;
   }
   desk.replaceChildren(editorCard());
   bindEditor();
+}
+
+function deskTabs() {
+  return [{ id: "videos", title: "유튜브 영상" }, { id: "cue", title: "사이 음향" }].concat(PAGES);
+}
+
+function deskSection(id) {
+  if (id === "videos") return videoBlock();
+  if (id === "cue") return cueBlock();
+  return pageBlock(PAGES.find((page) => page.id === id));
 }
 
 function loginCard() {
@@ -666,18 +678,39 @@ function loginCard() {
 }
 
 function editorCard() {
-  const root = el("div", { class: "desk" });
-  root.append(el("div", { class: "desk-head" }, [
-    el("h1", { text: "진행 관리" }),
-    el("div", { class: "actions" }, [
-      el("a", { class: "text-link", href: "now.html", target: "_blank", rel: "noopener", text: "진행 화면" }),
-      el("button", { type: "button", class: "ghost", id: "logout", text: "로그아웃" })
-    ])
-  ]));
-  root.append(videoBlock());
-  root.append(cueBlock());
-  PAGES.forEach((page) => root.append(pageBlock(page)));
-  return root;
+  const tabs = deskTabs();
+  if (!tabs.some((tab) => tab.id === state.deskTab)) state.deskTab = "videos";
+  const current = tabs.find((tab) => tab.id === state.deskTab);
+  const nav = el("nav", { class: "desk-nav", id: "desk-nav", "aria-label": "관리 섹션" });
+  tabs.forEach((tab) => {
+    const button = el("button", {
+      type: "button",
+      class: "desk-tab" + (tab.id === state.deskTab ? " is-on" : ""),
+      text: tab.title
+    });
+    button.addEventListener("click", () => {
+      state.deskTab = tab.id;
+      document.body.classList.remove("desk-open");
+      renderDesk();
+    });
+    nav.append(button);
+  });
+  const main = el("div", { class: "desk-main" }, [
+    el("div", { class: "desk-head" }, [
+      el("h1", { text: current.title }),
+      el("div", { class: "actions" }, [
+        el("a", { class: "text-link", href: "now.html", target: "_blank", rel: "noopener", text: "진행 화면" }),
+        el("button", { type: "button", class: "ghost", id: "logout", text: "로그아웃" })
+      ])
+    ]),
+    deskSection(state.deskTab)
+  ]);
+  return el("div", { class: "desk desk-app" }, [
+    el("button", { type: "button", class: "desk-menu ghost", id: "desk-menu", text: "메뉴" }),
+    nav,
+    el("div", { class: "desk-scrim", id: "desk-scrim" }),
+    main
+  ]);
 }
 
 function videoBlock() {
@@ -1008,6 +1041,10 @@ function bindEditor() {
     state.admin = false;
     renderDesk();
   });
+  const menu = document.getElementById("desk-menu");
+  const scrim = document.getElementById("desk-scrim");
+  if (menu) menu.addEventListener("click", () => document.body.classList.toggle("desk-open"));
+  if (scrim) scrim.addEventListener("click", () => document.body.classList.remove("desk-open"));
 }
 
 async function sha256(text) {
