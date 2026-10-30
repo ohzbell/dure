@@ -47,7 +47,6 @@ let armEnd = false;
 let docKey = "";
 let saveChain = Promise.resolve();
 let toastTimer = 0;
-let loginSum = 0;
 let loginBusy = false;
 let shownKey = "";
 let markTimers = [];
@@ -645,7 +644,6 @@ function renderDesk() {
   if (!state.admin) {
     desk.replaceChildren(loginCard());
     document.getElementById("login-form").addEventListener("submit", submitLogin);
-    fillCaptcha();
     return;
   }
   desk.replaceChildren(editorCard());
@@ -653,17 +651,15 @@ function renderDesk() {
 }
 
 function loginCard() {
-  return el("form", { class: "login desk-block", id: "login-form" }, [
+  return el("form", { class: "login desk desk-block", id: "login-form" }, [
     el("h2", { text: "관리자" }),
     el("label", { for: "login-id", text: "아이디" }),
     el("input", { id: "login-id", name: "username", autocomplete: "username", maxlength: "80" }),
     el("label", { for: "login-password", text: "비밀번호" }),
     el("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", maxlength: "200" }),
-    el("label", { for: "login-captcha", id: "login-captcha-label", text: "덧셈" }),
-    el("input", { id: "login-captcha", inputmode: "numeric", maxlength: "3", autocomplete: "off" }),
     el("input", { class: "hp", id: "fax_number", name: "fax_number", tabindex: "-1", autocomplete: "off" }),
     el("div", { class: "actions" }, [
-      el("button", { type: "submit", text: "들어가기" }),
+      el("button", { class: "ghost", type: "submit", text: "들어가기" }),
       el("a", { class: "text-link", href: "now.html", text: "진행 화면" })
     ])
   ]);
@@ -1072,14 +1068,6 @@ function registerLoginFailure() {
   sessionStorage.setItem(LOGIN_LOCK_KEY, JSON.stringify(data));
 }
 
-function fillCaptcha() {
-  const left = 2 + Math.floor(Math.random() * 8);
-  const right = 1 + Math.floor(Math.random() * 8);
-  loginSum = left + right;
-  const label = document.getElementById("login-captcha-label");
-  if (label) label.textContent = left + " + " + right + " =";
-}
-
 async function submitLogin(event) {
   event.preventDefault();
   if (loginBusy) return;
@@ -1095,17 +1083,13 @@ async function submitLogin(event) {
   }
   const id = document.getElementById("login-id").value.trim();
   const password = document.getElementById("login-password").value;
-  const captcha = document.getElementById("login-captcha").value.trim();
   loginBusy = true;
   try {
     const hash = await sha256(password);
-    const captchaOk = captcha !== "" && Number(captcha) === loginSum;
-    if (!(id === ADMIN_ID && safeEqual(hash, ADMIN_PASSWORD_SHA256) && captchaOk)) {
+    if (!(id === ADMIN_ID && safeEqual(hash, ADMIN_PASSWORD_SHA256))) {
       registerLoginFailure();
       document.getElementById("login-password").value = "";
-      fillCaptcha();
-      document.getElementById("login-captcha").value = "";
-      toast("아이디, 비밀번호 또는 덧셈 결과를 다시 확인해 주세요.");
+      toast("아이디 또는 비밀번호를 다시 확인해 주세요.");
       return;
     }
     try { sessionStorage.removeItem(LOGIN_LOCK_KEY); } catch (error) { /* ignore */ }
