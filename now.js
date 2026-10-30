@@ -67,7 +67,8 @@ function emptyDoc() {
       popular: [],
       final: []
     },
-    grades: []
+    grades: [],
+    tabOrder: []
   };
 }
 
@@ -237,7 +238,7 @@ async function request(method, body) {
 }
 
 function applyDoc(doc) {
-  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom]);
+  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder]);
   const changed = key !== docKey;
   docKey = key;
   const previous = currentClip();
@@ -276,7 +277,8 @@ async function sendDoc() {
       videos: state.doc.videos,
       cueOff: state.doc.cueOff,
       pages: state.doc.pages,
-      grades: state.doc.grades
+      grades: state.doc.grades,
+      tabOrder: state.doc.tabOrder || []
     });
     state.saving = false;
     applyDoc(doc);
@@ -495,6 +497,35 @@ function jumpTo(index) {
   playCurrent();
 }
 
+function goNextPage() {
+  if (pageId() === "final") setPage(0);
+  else setPage(state.page + 1);
+}
+
+function returnIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 1 1 0 11H12"].forEach((d) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  });
+  return svg;
+}
+
+let navMode = "";
+
+function paintNav() {
+  const back = pageId() === "final";
+  const mode = back ? "back" : "next";
+  if (mode === navMode) return;
+  navMode = mode;
+  const next = document.getElementById("page-next");
+  next.setAttribute("aria-label", back ? "첫 화면" : "다음 페이지");
+  next.replaceChildren(back ? returnIcon() : document.createTextNode("›"));
+}
+
 function setPage(index) {
   stopCue();
   stopVideo();
@@ -545,6 +576,7 @@ function paint() {
   const page = PAGES[state.page];
   document.getElementById("page-title").textContent = page.title;
   document.getElementById("page-sub").textContent = subtitle();
+  paintNav();
   if (!state.desk) document.title = page.title;
   syncVeil();
   const key = stageKey();
@@ -653,7 +685,17 @@ function renderDesk() {
 }
 
 function deskTabs() {
-  return [{ id: "videos", title: "유튜브 영상" }, { id: "cue", title: "사이 음향" }].concat(PAGES);
+  const base = [{ id: "videos", title: "유튜브 영상" }, { id: "cue", title: "사이 음향" }].concat(PAGES);
+  const saved = Array.isArray(state.doc.tabOrder) ? state.doc.tabOrder : [];
+  const tabs = [];
+  saved.forEach((id) => {
+    const tab = base.find((item) => item.id === id);
+    if (tab && !tabs.includes(tab)) tabs.push(tab);
+  });
+  base.forEach((tab) => {
+    if (!tabs.includes(tab)) tabs.push(tab);
+  });
+  return tabs;
 }
 
 function deskSection(id) {
@@ -693,8 +735,12 @@ function editorCard() {
       document.body.classList.remove("desk-open");
       renderDesk();
     });
-    nav.append(button);
+    const row = el("div", { class: "desk-tab-row" });
+    row.setAttribute("data-id", tab.id);
+    row.append(el("button", { type: "button", class: "handle", text: "↕", "aria-label": "순서 변경" }), button);
+    nav.append(row);
   });
+  enableTabDrag(nav);
   const main = el("div", { class: "desk-main" }, [
     el("div", { class: "desk-head" }, [
       el("h1", { text: current.title }),
@@ -999,6 +1045,39 @@ function adder(items, withLyrics) {
   return wrap;
 }
 
+function enableTabDrag(nav) {
+  nav.querySelectorAll(".handle").forEach((handle) => {
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button != null && event.button !== 0) return;
+      event.preventDefault();
+      state.dragging = true;
+      const row = handle.closest(".desk-tab-row");
+      try { handle.setPointerCapture(event.pointerId); } catch (error) { /* pointer already released */ }
+      let done = false;
+      const move = (ev) => {
+        const rows = Array.from(nav.querySelectorAll(".desk-tab-row"));
+        const target = rows.find((item) => {
+          const box = item.getBoundingClientRect();
+          return ev.clientY < box.top + box.height / 2;
+        });
+        if (target && target !== row) nav.insertBefore(row, target);
+        else if (!target && nav.lastElementChild !== row) nav.append(row);
+      };
+      const finish = () => {
+        if (done) return;
+        done = true;
+        state.dragging = false;
+        handle.removeEventListener("pointermove", move);
+        state.doc.tabOrder = Array.from(nav.querySelectorAll(".desk-tab-row")).map((item) => item.getAttribute("data-id"));
+        queueSave();
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", finish, { once: true });
+      handle.addEventListener("pointercancel", finish, { once: true });
+    });
+  });
+}
+
 function enableDrag(list, items) {
   list.querySelectorAll(".handle").forEach((handle) => {
     handle.addEventListener("pointerdown", (event) => {
@@ -1006,7 +1085,7 @@ function enableDrag(list, items) {
       event.preventDefault();
       state.dragging = true;
       const row = handle.closest(".clip");
-      handle.setPointerCapture(event.pointerId);
+      try { handle.setPointerCapture(event.pointerId); } catch (error) { /* pointer already released */ }
       let done = false;
       const move = (ev) => {
         const rows = Array.from(list.querySelectorAll(".clip"));
@@ -1149,7 +1228,7 @@ async function refresh() {
 
 function bindShow() {
   document.getElementById("page-prev").addEventListener("click", () => setPage(state.page - 1));
-  document.getElementById("page-next").addEventListener("click", () => setPage(state.page + 1));
+  document.getElementById("page-next").addEventListener("click", goNextPage);
   document.getElementById("play").addEventListener("click", () => {
     const clip = currentClip();
     if (pageId() === "guess" && !state.revealed) return;
@@ -1170,7 +1249,7 @@ function bindShow() {
     const tag = event.target && event.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
     if (event.key === "ArrowLeft") setPage(state.page - 1);
-    if (event.key === "ArrowRight") setPage(state.page + 1);
+    if (event.key === "ArrowRight") goNextPage();
   });
 }
 
