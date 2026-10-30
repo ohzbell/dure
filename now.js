@@ -52,6 +52,8 @@ let toastTimer = 0;
 let loginBusy = false;
 let shownKey = "";
 let markTimers = [];
+let seeking = false;
+let seekTimer = 0;
 
 function emptyDoc() {
   return {
@@ -647,6 +649,7 @@ function paint() {
   paintNav();
   if (!state.desk) document.title = page.title;
   syncVeil();
+  paintSeek();
   const key = stageKey();
   if (key !== shownKey) {
     shownKey = key;
@@ -1377,6 +1380,64 @@ async function refresh() {
   } catch (error) { /* keep the screen up */ }
 }
 
+function clipBounds(clip) {
+  let duration = 0;
+  try { duration = player && player.getDuration ? player.getDuration() || 0 : 0; } catch (error) { duration = 0; }
+  const start = clip.start || 0;
+  let end = clip.end == null ? duration : clip.end;
+  if (duration && end > duration) end = duration;
+  if (!(end > start)) end = duration > start ? duration : start + 1;
+  return { start: start, end: end };
+}
+
+function seekVisible() {
+  const clip = currentClip();
+  if (!clip || state.desk || state.counting || state.loadedId !== clip.clipId) return false;
+  if (pageId() === "random" && state.randomPhase !== "play") return false;
+  if (pageId() === "guess" && !state.revealed) return false;
+  return true;
+}
+
+function paintSeekFill(range) {
+  const pct = (Number(range.value) / 1000) * 100;
+  range.style.background = "linear-gradient(90deg, #c8c8c8 " + pct + "%, rgba(200,200,200,0.28) " + pct + "%)";
+}
+
+function paintSeek() {
+  const bar = document.getElementById("seek");
+  if (!bar) return;
+  const show = seekVisible();
+  bar.hidden = !show;
+  if (!show) return;
+  const bounds = clipBounds(currentClip());
+  const span = Math.max(0.01, bounds.end - bounds.start);
+  if (seeking) return;
+  let now = bounds.start;
+  try { now = player.getCurrentTime(); } catch (error) { now = bounds.start; }
+  const ratio = Math.min(1, Math.max(0, (now - bounds.start) / span));
+  const range = document.getElementById("seek-range");
+  range.value = String(Math.round(ratio * 1000));
+  paintSeekFill(range);
+  document.getElementById("seek-time").textContent = formatTime(Math.max(0, now - bounds.start));
+  document.getElementById("seek-total").textContent = formatTime(span);
+}
+
+function seekRatio(ratio) {
+  const clip = currentClip();
+  if (!clip || !player || !player.seekTo) return;
+  const bounds = clipBounds(clip);
+  const span = Math.max(0, bounds.end - bounds.start);
+  const time = bounds.start + Math.min(1, Math.max(0, ratio)) * span;
+  let paused = false;
+  try { paused = player.getPlayerState() === 2; } catch (error) { paused = false; }
+  try { player.seekTo(Math.min(time, Math.max(bounds.start, bounds.end - 0.05)), true); } catch (error) { return; }
+  if (paused) {
+    try { player.pauseVideo(); } catch (error) { /* keep the paused frame */ }
+  }
+  document.getElementById("seek-time").textContent = formatTime(Math.max(0, time - bounds.start));
+  paintSeekFill(document.getElementById("seek-range"));
+}
+
 function bindShow() {
   document.getElementById("page-prev").addEventListener("click", () => setPage(state.page - 1));
   document.getElementById("page-next").addEventListener("click", goNextPage);
@@ -1395,6 +1456,22 @@ function bindShow() {
     try { if (player) player.pauseVideo(); } catch (error) { /* ignore */ }
   });
   document.getElementById("next-track").addEventListener("click", nextTrack);
+  const range = document.getElementById("seek-range");
+  range.addEventListener("pointerdown", (event) => {
+    seeking = true;
+    try { range.setPointerCapture(event.pointerId); } catch (error) { /* already released */ }
+  });
+  range.addEventListener("pointerup", () => { seeking = false; });
+  range.addEventListener("pointercancel", () => { seeking = false; });
+  range.addEventListener("input", () => {
+    seeking = true;
+    seekRatio(Number(range.value) / 1000);
+  });
+  range.addEventListener("change", () => {
+    seeking = false;
+    seekRatio(Number(range.value) / 1000);
+  });
+  seekTimer = window.setInterval(paintSeek, 250);
   document.getElementById("list-toggle").addEventListener("click", toggleList);
   document.addEventListener("keydown", (event) => {
     if (state.desk) return;
