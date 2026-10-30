@@ -302,6 +302,8 @@ body.is-desk #desk {
   margin: 0 0 6px;
 }
 
+.desk-tab-row.is-fixed { padding-left: 38px; }
+
 .desk .desk-nav .desk-tab {
   display: flex;
   align-items: center;

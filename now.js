@@ -141,8 +141,21 @@ function formatTime(value) {
   return minute + ":" + String(second).padStart(2, "0");
 }
 
+function pageOrder() {
+  const saved = Array.isArray(state.doc.tabOrder) ? state.doc.tabOrder : [];
+  const pages = [];
+  saved.forEach((id) => {
+    const page = PAGES.find((item) => item.id === id);
+    if (page && !pages.includes(page)) pages.push(page);
+  });
+  PAGES.forEach((page) => {
+    if (!pages.includes(page)) pages.push(page);
+  });
+  return pages;
+}
+
 function pageId() {
-  return PAGES[state.page].id;
+  return pageOrder()[state.page].id;
 }
 
 function findVideo(id) {
@@ -241,8 +254,11 @@ function applyDoc(doc) {
   const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder]);
   const changed = key !== docKey;
   docKey = key;
+  const keepId = pageOrder()[state.page] ? pageOrder()[state.page].id : "";
   const previous = currentClip();
   state.doc = doc;
+  const kept = pageOrder().findIndex((page) => page.id === keepId);
+  if (kept >= 0) state.page = kept;
   const clips = clipsForPage();
   if (previous) {
     const index = clips.findIndex((clip) => clip.clipId === previous.clipId);
@@ -498,7 +514,7 @@ function jumpTo(index) {
 }
 
 function goNextPage() {
-  if (pageId() === "final") setPage(0);
+  if (state.page >= pageOrder().length - 1) setPage(0);
   else setPage(state.page + 1);
 }
 
@@ -517,7 +533,7 @@ function returnIcon() {
 let navMode = "";
 
 function paintNav() {
-  const back = pageId() === "final";
+  const back = state.page >= pageOrder().length - 1;
   const mode = back ? "back" : "next";
   if (mode === navMode) return;
   navMode = mode;
@@ -529,12 +545,13 @@ function paintNav() {
 function setPage(index) {
   stopCue();
   stopVideo();
-  state.page = (index + PAGES.length) % PAGES.length;
+  const pages = pageOrder();
+  state.page = (index + pages.length) % pages.length;
   state.clip = 0;
   state.revealed = false;
   state.lyricsShown = false;
   state.videoVisible = true;
-  history.replaceState(null, "", "#" + PAGES[state.page].id);
+  history.replaceState(null, "", "#" + pages[state.page].id);
   paint();
 }
 
@@ -573,7 +590,7 @@ function stageKey() {
 }
 
 function paint() {
-  const page = PAGES[state.page];
+  const page = pageOrder()[state.page];
   document.getElementById("page-title").textContent = page.title;
   document.getElementById("page-sub").textContent = subtitle();
   paintNav();
@@ -685,17 +702,7 @@ function renderDesk() {
 }
 
 function deskTabs() {
-  const base = [{ id: "videos", title: "유튜브 영상" }, { id: "cue", title: "사이 음향" }].concat(PAGES);
-  const saved = Array.isArray(state.doc.tabOrder) ? state.doc.tabOrder : [];
-  const tabs = [];
-  saved.forEach((id) => {
-    const tab = base.find((item) => item.id === id);
-    if (tab && !tabs.includes(tab)) tabs.push(tab);
-  });
-  base.forEach((tab) => {
-    if (!tabs.includes(tab)) tabs.push(tab);
-  });
-  return tabs;
+  return [{ id: "videos", title: "유튜브 영상", fixed: true }, { id: "cue", title: "사이 음향", fixed: true }].concat(pageOrder());
 }
 
 function deskSection(id) {
@@ -724,6 +731,7 @@ function editorCard() {
   if (!tabs.some((tab) => tab.id === state.deskTab)) state.deskTab = "videos";
   const current = tabs.find((tab) => tab.id === state.deskTab);
   const nav = el("nav", { class: "desk-nav", id: "desk-nav", "aria-label": "관리 섹션" });
+  const movable = el("div", { class: "desk-page-tabs" });
   tabs.forEach((tab) => {
     const button = el("button", {
       type: "button",
@@ -735,12 +743,14 @@ function editorCard() {
       document.body.classList.remove("desk-open");
       renderDesk();
     });
-    const row = el("div", { class: "desk-tab-row" });
+    const row = el("div", { class: "desk-tab-row" + (tab.fixed ? " is-fixed" : "") });
     row.setAttribute("data-id", tab.id);
-    row.append(el("button", { type: "button", class: "handle", text: "↕", "aria-label": "순서 변경" }), button);
-    nav.append(row);
+    if (!tab.fixed) row.append(el("button", { type: "button", class: "handle", text: "↕", "aria-label": "순서 변경" }));
+    row.append(button);
+    (tab.fixed ? nav : movable).append(row);
   });
-  enableTabDrag(nav);
+  nav.append(movable);
+  enableTabDrag(movable);
   const main = el("div", { class: "desk-main" }, [
     el("div", { class: "desk-head" }, [
       el("h1", { text: current.title }),
@@ -1255,7 +1265,7 @@ function bindShow() {
 
 async function boot() {
   const hash = location.hash.replace(/^#/, "");
-  const found = PAGES.findIndex((page) => page.id === hash);
+  const found = pageOrder().findIndex((page) => page.id === hash);
   state.page = found < 0 ? 0 : found;
   if (state.desk) {
     document.body.classList.add("is-desk");
