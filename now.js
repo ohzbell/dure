@@ -1012,13 +1012,12 @@ function adder(items, withLyrics) {
   const input = el("input", { type: "text", placeholder: "영상 제목 검색", autocomplete: "off" });
   const matches = el("ul");
   let picked = "";
-  input.addEventListener("input", () => {
-    picked = "";
-    const query = input.value.trim().toLowerCase();
+  const paintMatches = (query) => {
+    const needle = query.trim().toLowerCase();
     matches.replaceChildren();
-    if (!query) return;
-    state.doc.videos.filter((video) => video.title.toLowerCase().includes(query)).slice(0, 8).forEach((video) => {
+    state.doc.videos.filter((video) => !needle || video.title.toLowerCase().includes(needle)).forEach((video) => {
       const button = el("button", { type: "button", text: video.title });
+      button.addEventListener("mousedown", (event) => event.preventDefault());
       button.addEventListener("click", () => {
         picked = video.id;
         input.value = video.title;
@@ -1026,7 +1025,16 @@ function adder(items, withLyrics) {
       });
       matches.append(el("li", {}, [button]));
     });
+  };
+  matches.addEventListener("mousedown", (event) => event.preventDefault());
+  const showAll = () => paintMatches("");
+  input.addEventListener("focus", showAll);
+  input.addEventListener("pointerdown", showAll);
+  input.addEventListener("input", () => {
+    picked = "";
+    paintMatches(input.value);
   });
+  input.addEventListener("blur", () => matches.replaceChildren());
   const start = el("input", { class: "time", placeholder: "시작", "aria-label": "시작 시간" });
   const end = el("input", { class: "time", placeholder: "끝", "aria-label": "종료 시간" });
   const lyrics = withLyrics ? el("textarea", { placeholder: "가사", maxlength: "4000" }) : null;
