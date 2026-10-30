@@ -44,10 +44,10 @@ body.is-open #veil { display: none; }
   right: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: 88px 132px minmax(0, 1fr) 132px;
-  gap: 16px;
+  grid-template-columns: 88px minmax(0, 1fr) 88px;
+  gap: 12px;
   align-items: center;
-  padding: 22px 28px 48px;
+  padding: 15px 18px 32px;
   background: linear-gradient(#000 20%, rgba(0, 0, 0, 0));
   pointer-events: none;
 }
@@ -74,71 +74,56 @@ body.is-open #veil { display: none; }
   text-shadow: 0 2px 12px #000;
 }
 
-.nav, .transport button, .list-toggle, .overlay-btn, .admin-jump {
-  border: 3px solid #e4e4e4;
-  border-radius: 28px;
-  background: rgba(214, 214, 214, 0.78);
-  color: #1c1c1c;
+.nav, .icon-btn, .overlay-btn {
+  box-sizing: border-box;
+  border: 2px solid #c8c8c8;
+  border-radius: 18px;
+  background: transparent;
+  color: #c8c8c8;
   font-weight: 700;
   cursor: pointer;
 }
 
 .nav {
-  width: 132px;
-  height: 108px;
-  font-size: 84px;
+  width: 88px;
+  height: 72px;
+  font-size: 56px;
   line-height: 1;
 }
 
-.admin-jump {
+.icon-btn {
   display: grid;
   place-items: center;
-  width: 84px;
-  height: 84px;
-  color: #fff;
+  width: 72px;
+  height: 72px;
+  padding: 0;
 }
 
-.admin-jump svg, .list-toggle svg {
-  width: 46px;
-  height: 46px;
+.icon-btn svg {
+  width: 32px;
+  height: 32px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.4;
+  stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.transport {
+.transport, .side-tools {
   position: fixed;
-  left: 28px;
-  bottom: 28px;
-  z-index: 5;
-  display: flex;
-  gap: 14px;
-}
-
-.transport button {
-  min-width: 168px;
-  min-height: 96px;
-  padding: 0 28px;
-  font-size: clamp(28px, 3vh, 40px);
-}
-
-.list-toggle {
-  position: fixed;
-  right: 28px;
-  bottom: 28px;
+  bottom: 18px;
   z-index: 6;
-  display: grid;
-  place-items: center;
-  width: 108px;
-  height: 108px;
+  display: flex;
+  gap: 10px;
 }
+
+.transport { left: 18px; }
+.side-tools { right: 18px; }
 
 #playlist {
   position: fixed;
   right: 28px;
-  bottom: 152px;
+  bottom: 108px;
   z-index: 6;
   width: min(560px, calc(100vw - 56px));
   max-height: min(58vh, 760px);
@@ -246,7 +231,7 @@ body.is-open #veil { display: none; }
 .lyrics-tools {
   position: fixed;
   left: 50%;
-  bottom: 148px;
+  bottom: 108px;
   z-index: 5;
   display: flex;
   gap: 16px;
@@ -254,10 +239,10 @@ body.is-open #veil { display: none; }
 }
 
 .overlay-btn {
-  min-width: 220px;
-  min-height: 92px;
-  padding: 0 28px;
-  font-size: clamp(28px, 3vh, 40px);
+  min-width: 148px;
+  min-height: 61px;
+  padding: 0 18px;
+  font-size: clamp(20px, 2.2vh, 28px);
 }
 
 body.is-desk { overflow: auto; background: #111; }
@@ -414,12 +399,14 @@ textarea { min-height: 96px; resize: vertical; }
 }
 
 @media (max-width: 800px) {
-  .show-top { grid-template-columns: 64px 72px minmax(0, 1fr) 72px; gap: 8px; padding: 12px; }
-  .nav { width: 72px; height: 72px; font-size: 52px; }
-  .admin-jump { width: 64px; height: 64px; }
-  .transport { left: 8px; right: 92px; bottom: 12px; gap: 6px; }
-  .transport button { flex: 1; min-width: 0; min-height: 64px; padding: 0 8px; font-size: 16px; }
-  .list-toggle { right: 8px; bottom: 12px; width: 72px; height: 72px; }
-  .lyrics-tools { bottom: 96px; width: calc(100% - 24px); }
-  .overlay-btn { flex: 1; min-width: 0; min-height: 64px; font-size: 18px; }
+  .show-top { grid-template-columns: 48px minmax(0, 1fr) 48px; gap: 8px; padding: 10px; }
+  .nav { width: 48px; height: 48px; font-size: 36px; }
+  .icon-btn { width: 48px; height: 48px; }
+  .icon-btn svg { width: 22px; height: 22px; }
+  .transport, .side-tools { bottom: 10px; gap: 6px; }
+  .transport { left: 8px; }
+  .side-tools { right: 8px; }
+  #playlist { bottom: 68px; }
+  .lyrics-tools { bottom: 68px; width: calc(100% - 24px); }
+  .overlay-btn { flex: 1; min-width: 0; min-height: 44px; font-size: 16px; }
 }
