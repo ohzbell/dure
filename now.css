@@ -410,6 +410,23 @@ textarea { min-height: 96px; resize: vertical; }
 
 .line input, .adder input, .video-row input { flex: 1 1 140px; width: auto; }
 .adder .time, .clip .time { flex: 0 0 88px; width: 88px; }
+.adder .time, .adder .mark { position: relative; z-index: 7; }
+
+.play-span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.play-span-label { font-weight: 700; white-space: nowrap; }
+.play-span .time { flex: 0 0 72px; width: 72px; text-align: center; }
+
+.desk .play-span button {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 12px;
+}
 
 .desk button:disabled { opacity: 0.4; cursor: default; }
 

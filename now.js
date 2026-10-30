@@ -69,7 +69,8 @@ function emptyDoc() {
       final: []
     },
     grades: [],
-    tabOrder: []
+    tabOrder: [],
+    playSeconds: null
   };
 }
 
@@ -252,9 +253,10 @@ async function request(method, body) {
 }
 
 function applyDoc(doc) {
-  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder]);
+  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds]);
   const changed = key !== docKey;
   docKey = key;
+  if (!changed) return;
   const keepId = pageOrder()[state.page] ? pageOrder()[state.page].id : "";
   const previous = currentClip();
   state.doc = doc;
@@ -273,7 +275,6 @@ function applyDoc(doc) {
   } else if (state.clip >= clips.length) {
     state.clip = 0;
   }
-  if (!changed) return;
   if (state.desk) {
     if (!state.dragging && !deskBusy()) renderDesk();
   } else {
@@ -295,7 +296,8 @@ async function sendDoc() {
       cueOff: state.doc.cueOff,
       pages: state.doc.pages,
       grades: state.doc.grades,
-      tabOrder: state.doc.tabOrder || []
+      tabOrder: state.doc.tabOrder || [],
+      playSeconds: state.doc.playSeconds || null
     });
     state.saving = false;
     applyDoc(doc);
@@ -969,12 +971,14 @@ function pageBlock(page) {
     return block;
   }
   const note = page.id === "random"
-    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 시작·끝이 비어 있으면 처음부터 끝까지입니다."
+    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 전체적용하면 끝은 시작 시간에 그 초를 더한 값이 됩니다."
     : page.id === "lyrics"
       ? "영상 제목을 고르고 가사를 입력합니다. 시작·끝은 비워 두면 처음부터 끝까지입니다."
       : "영상 제목을 검색해 넣습니다. 시작·끝은 비워 두면 처음부터 끝까지입니다.";
   block.append(el("p", { class: "desk-note", text: note }));
-  mountClips(block, state.doc.pages[page.id], page.id === "lyrics");
+  if (page.id === "random") block.append(playSpanBar());
+  const sectionId = page.id;
+  mountClips(block, () => state.doc.pages[sectionId], page.id === "lyrics", page.id === "random" ? state.doc.playSeconds : 0);
   return block;
 }
 
@@ -999,19 +1003,62 @@ function gradeBlock(grade) {
     renderDesk();
   });
   box.append(el("div", { class: "grade-head" }, [name, remove]));
-  mountClips(box, grade.items, false);
+  const gradeId = grade.id;
+  mountClips(box, () => {
+    const current = state.doc.grades.find((item) => item.id === gradeId);
+    return current ? current.items : [];
+  }, false);
   return box;
 }
 
-function mountClips(container, items, withLyrics) {
+function mountClips(container, getItems, withLyrics, playSeconds) {
+  const span = playSeconds || 0;
   const list = el("div", { class: "clips" });
-  items.forEach((item) => list.append(clipRow(item, items, withLyrics)));
+  getItems().forEach((item) => list.append(clipRow(item, getItems, withLyrics, span)));
   container.append(list);
-  enableDrag(list, items);
-  container.append(adder(items, withLyrics));
+  enableDrag(list, getItems);
+  container.append(adder(getItems, withLyrics, span));
 }
 
-function clipRow(item, items, withLyrics) {
+function playSpanBar() {
+  const input = el("input", {
+    class: "time",
+    inputmode: "numeric",
+    maxlength: "4",
+    placeholder: "00",
+    "aria-label": "플레이시간(초)"
+  });
+  if (state.doc.playSeconds) input.value = String(state.doc.playSeconds);
+  const apply = el("button", { type: "button", class: "ghost", text: "전체적용" });
+  apply.addEventListener("click", () => {
+    const seconds = readSeconds(input.value);
+    if (!seconds) {
+      toast("플레이 시간은 초 단위로 입력해 주세요.");
+      input.value = state.doc.playSeconds ? String(state.doc.playSeconds) : "";
+      return;
+    }
+    state.doc.playSeconds = seconds;
+    state.doc.pages.random.forEach((clip) => {
+      clip.end = clampSec((clip.start || 0) + seconds);
+    });
+    queueSave();
+    renderDesk();
+  });
+  return el("div", { class: "play-span" }, [
+    el("span", { class: "play-span-label", text: "플레이시간" }),
+    input,
+    el("span", { text: "초" }),
+    apply
+  ]);
+}
+
+function readSeconds(text) {
+  const raw = String(text || "").trim();
+  if (!/^\d+$/.test(raw)) return null;
+  return clampSec(Number(raw));
+}
+
+function clipRow(item, getItems, withLyrics, playSeconds) {
   const video = findVideo(item.video);
   const row = el("div", { class: "clip" });
   row.setAttribute("data-id", item.id);
@@ -1021,23 +1068,28 @@ function clipRow(item, items, withLyrics) {
   ]);
   const start = el("input", { class: "time", value: formatTime(item.start), placeholder: "시작", "aria-label": "시작 시간" });
   const end = el("input", { class: "time", value: formatTime(item.end), placeholder: "끝", "aria-label": "종료 시간" });
-  const applyTime = () => {
+  const applyTime = (source) => {
     const nextStart = readTime(start, item.start);
     const nextEnd = readTime(end, item.end);
     if (nextStart === false || nextEnd === false) return;
-    if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
+    let endValue = nextEnd;
+    if (source === "start" && playSeconds) endValue = clampSec((nextStart || 0) + playSeconds);
+    if (nextStart != null && endValue != null && endValue <= nextStart) {
       toast("끝나는 시간은 시작보다 뒤여야 합니다.");
+      start.value = formatTime(item.start);
       end.value = formatTime(item.end);
       return;
     }
     item.start = nextStart;
-    item.end = nextEnd;
+    item.end = endValue;
+    end.value = formatTime(item.end);
     queueSave();
   };
-  start.addEventListener("change", applyTime);
-  end.addEventListener("change", applyTime);
+  start.addEventListener("change", () => applyTime("start"));
+  end.addEventListener("change", () => applyTime("end"));
   const remove = el("button", { type: "button", class: "ghost mark", text: "−", "aria-label": "삭제" });
   remove.addEventListener("click", () => {
+    const items = getItems();
     const index = items.findIndex((clip) => clip.id === item.id);
     if (index >= 0) items.splice(index, 1);
     queueSave();
@@ -1067,21 +1119,24 @@ function readTime(input, previous) {
   return value;
 }
 
-function adder(items, withLyrics) {
+function adder(getItems, withLyrics, playSeconds) {
   const wrap = el("div", { class: "adder" });
   const input = el("input", { type: "text", placeholder: "영상 제목 검색", autocomplete: "off" });
   const matches = el("ul");
   let picked = "";
+  const choose = (video) => {
+    picked = video.id;
+    input.value = video.title;
+    matches.replaceChildren();
+  };
   const paintMatches = (query) => {
     const needle = query.trim().toLowerCase();
     matches.replaceChildren();
     state.doc.videos.filter((video) => !needle || video.title.toLowerCase().includes(needle)).forEach((video) => {
       const button = el("button", { type: "button", text: video.title });
-      button.addEventListener("mousedown", (event) => event.preventDefault());
-      button.addEventListener("click", () => {
-        picked = video.id;
-        input.value = video.title;
-        matches.replaceChildren();
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        choose(video);
       });
       matches.append(el("li", {}, [button]));
     });
@@ -1106,15 +1161,16 @@ function adder(items, withLyrics) {
       return;
     }
     const nextStart = readTime(start, null);
-    const nextEnd = readTime(end, null);
+    let nextEnd = readTime(end, null);
     if (nextStart === false || nextEnd === false) return;
+    if (nextEnd == null && playSeconds) nextEnd = clampSec((nextStart || 0) + playSeconds);
     if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
       toast("끝나는 시간은 시작보다 뒤여야 합니다.");
       return;
     }
     const clip = { id: uid(), video: video.id, start: nextStart, end: nextEnd };
     if (withLyrics) clip.lyrics = lyrics.value.trim();
-    items.push(clip);
+    getItems().push(clip);
     queueSave();
     renderDesk();
   });
@@ -1196,9 +1252,10 @@ function enableTabDrag(nav) {
   });
 }
 
-function enableDrag(list, items) {
+function enableDrag(list, getItems) {
   list.querySelectorAll(".handle").forEach((handle) => {
     bindRowDrag(handle, ".clip", list, () => {
+      const items = getItems();
       const order = Array.from(list.querySelectorAll(".clip")).map((item) => item.getAttribute("data-id"));
       const next = order.map((id) => items.find((item) => item.id === id)).filter(Boolean);
       items.splice(0, items.length, ...next);
