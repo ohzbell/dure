@@ -530,6 +530,8 @@ textarea { min-height: 96px; resize: vertical; }
 }
 
 .video-row, .line { margin-top: 8px; }
+.video-row + .video-row,
+.video-row + .line { margin-top: 16px; }
 .grade { margin-top: 12px; }
 
 .handle {
