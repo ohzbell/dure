@@ -644,10 +644,7 @@ function hush(item) {
 
 function outputVolume() {
   if (state.muted || state.volume <= 0) return 0;
-  const level = Math.max(0, Math.min(100, Math.round(state.volume)));
-  if (pageId() === "guess" && state.revealed) return Math.round(level * 0.3);
-  if (pageId() === "lyrics" && state.lyricsShown) return Math.round(level * 0.5);
-  return level;
+  return Math.max(0, Math.min(100, Math.round(state.volume)));
 }
 
 function speak(item) {
