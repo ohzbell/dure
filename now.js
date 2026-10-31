@@ -516,6 +516,7 @@ function bindLiveSave(node, commit, delay) {
   node.addEventListener("compositionend", soon);
   node.addEventListener("change", () => run(true));
   node.addEventListener("blur", () => run(true));
+  node.addEventListener("focusout", () => run(true));
 }
 
 function flushLiveEdits() {
@@ -643,6 +644,7 @@ function outputVolume() {
   if (state.muted || state.volume <= 0) return 0;
   const level = Math.max(0, Math.min(100, Math.round(state.volume)));
   if (pageId() === "guess" && state.revealed) return Math.round(level * 0.3);
+  if (pageId() === "lyrics" && state.lyricsShown) return Math.round(level * 0.5);
   return level;
 }
 
@@ -695,6 +697,7 @@ function onPlayerState(event) {
   if (!player || event.target !== player) return;
   if (event.data === 1) {
     armEnd = true;
+    applyVolume();
     primeNext();
   }
   if (event.data !== 0 || !armEnd) return;
@@ -740,9 +743,35 @@ function showFinish() {
 function clipArgs(clip) {
   const id = youtubeId(clip.url);
   if (!id) return null;
-  const args = { videoId: id, startSeconds: clip.start || 0 };
-  if (clip.end) args.endSeconds = clip.end;
+  const keepGoing = pageId() === "lyrics" && state.lyricsShown;
+  const args = { videoId: id, startSeconds: keepGoing && clip.end != null ? clip.end : (clip.start || 0) };
+  if (!keepGoing && clip.end) args.endSeconds = clip.end;
   return args;
+}
+
+function continueLyrics() {
+  applyVolume();
+  const clip = currentClip();
+  if (!clip || !player) {
+    state.needRestart = true;
+    return;
+  }
+  if (clip.end == null) {
+    try { player.playVideo(); } catch (error) { /* already playing */ }
+    speak(player);
+    return;
+  }
+  const args = clipArgs(clip);
+  if (!args) return;
+  armEnd = false;
+  state.loadedId = clip.clipId;
+  state.needRestart = false;
+  try {
+    player.loadVideoById(args);
+    speak(player);
+  } catch (error) {
+    state.needRestart = true;
+  }
 }
 
 function primeNext() {
@@ -1275,8 +1304,9 @@ function paintStage() {
       const button = el("button", { type: "button", class: "answer", text: "정답" });
       button.addEventListener("click", () => {
         state.lyricsShown = true;
-        try { if (player) player.pauseVideo(); } catch (error) { /* ignore */ }
+        continueLyrics();
         paint();
+        if (state.needRestart) prepareClip(true);
       });
       stage.append(button);
     } else if (clip) {
@@ -2614,6 +2644,7 @@ function pageBlock(page) {
   ]);
   if (page.id === "grade") {
     block.append(el("p", { class: "desk-note", text: "아래 칸에 학년, 영상, 시작, 끝을 입력하고 +를 누르면 한 곡이 추가됩니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀝니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
+    block.append(saveAllBar());
     const list = el("div", { class: "grades" });
     state.doc.grades.forEach((grade) => list.append(gradeBlock(grade)));
     block.append(list);
@@ -2627,10 +2658,24 @@ function pageBlock(page) {
       ? "영상 제목을 고르고 가사를 입력합니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀌고, 비워 두면 처음부터 끝까지입니다."
       : "영상 제목을 검색해 넣습니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀌고, 비워 두면 처음부터 끝까지입니다.";
   block.append(el("p", { class: "desk-note", text: note }));
+  block.append(saveAllBar());
   if (page.id === "random") block.append(playSpanBar());
   const sectionId = page.id;
   mountClips(block, () => state.doc.pages[sectionId], page.id === "lyrics", page.id === "random" ? state.doc.playSeconds : 0);
   return block;
+}
+
+function saveAllBar() {
+  const button = el("button", { type: "button", class: "save-all-btn", text: "일괄 저장" });
+  button.addEventListener("click", async () => {
+    if (button.disabled) return;
+    flushLiveEdits();
+    button.disabled = true;
+    const ok = await queueSave();
+    if (button.isConnected) button.disabled = false;
+    toast(ok ? "저장했습니다." : "저장하지 못했습니다.");
+  });
+  return el("div", { class: "save-all" }, [button]);
 }
 
 function gradeBlock(grade) {
@@ -3483,6 +3528,7 @@ function clipBounds(clip) {
   try { duration = player && player.getDuration ? player.getDuration() || 0 : 0; } catch (error) { duration = 0; }
   const start = clip.start || 0;
   let end = clip.end == null ? duration : clip.end;
+  if (pageId() === "lyrics" && state.lyricsShown && duration > end) end = duration;
   if (duration && end > duration) end = duration;
   if (!(end > start)) end = duration > start ? duration : start + 1;
   return { start: start, end: end };
@@ -3515,8 +3561,8 @@ function paintSeek() {
   const range = document.getElementById("seek-range");
   range.value = String(Math.round(ratio * 1000));
   paintSeekFill(range);
-  document.getElementById("seek-time").textContent = formatTime(Math.max(0, now - bounds.start));
-  document.getElementById("seek-total").textContent = formatTime(span);
+  document.getElementById("seek-time").textContent = formatTime(now);
+  document.getElementById("seek-total").textContent = formatTime(bounds.end);
 }
 
 function seekRatio(ratio) {
@@ -3531,7 +3577,7 @@ function seekRatio(ratio) {
   if (paused) {
     try { player.pauseVideo(); } catch (error) { /* keep the paused frame */ }
   }
-  document.getElementById("seek-time").textContent = formatTime(Math.max(0, time - bounds.start));
+  document.getElementById("seek-time").textContent = formatTime(time);
   paintSeekFill(document.getElementById("seek-range"));
 }
 

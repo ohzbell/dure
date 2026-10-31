@@ -1026,6 +1026,9 @@ body.is-sermon #sections { display: none !important; }
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+.save-all { display: flex; justify-content: flex-end; margin: 0 0 14px; }
+.desk .save-all-btn { min-width: 132px; }
+
 .desk-note {
   margin: 0 0 18px;
   color: #bbb;
