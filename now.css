@@ -664,6 +664,8 @@ body.watch-open { overflow: hidden; }
 .video-row + .video-row,
 .video-row + .line { margin-top: 16px; }
 .grades { display: flex; flex-direction: column; gap: 8px; }
+.grade-add { margin-top: 8px; }
+.grade-pad { flex: 0 0 32px; width: 32px; height: 36px; }
 .grade-row {
   display: flex;
   flex-wrap: nowrap;
