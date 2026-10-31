@@ -929,6 +929,10 @@ function videoBlock() {
     title.addEventListener("blur", () => window.setTimeout(save, 0));
     url.addEventListener("change", save);
     url.addEventListener("blur", () => window.setTimeout(save, 0));
+    const watch = watchButton(() => ({
+      title: title.value.trim() || video.title,
+      url: url.value.trim()
+    }));
     const remove = el("button", { type: "button", class: "ghost mark", text: "−", "aria-label": "삭제" });
     remove.addEventListener("click", () => {
       if (!window.confirm("이 영상을 목록에서 지울까요?")) return;
@@ -942,7 +946,7 @@ function videoBlock() {
       queueSave();
       renderDesk();
     });
-    const row = el("div", { class: "video-row" }, [title, url, remove]);
+    const row = el("div", { class: "video-row" }, [title, url, watch, remove]);
     row.setAttribute("data-id", video.id);
     block.append(row);
   });
@@ -1164,6 +1168,13 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
   };
   start.addEventListener("change", () => applyTime("start"));
   end.addEventListener("change", () => applyTime("end"));
+  const watch = watchButton(
+    () => findVideo(item.video),
+    () => ({
+      start: quietTime(start.value, item.start),
+      end: quietTime(end.value, item.end)
+    })
+  );
   const remove = el("button", { type: "button", class: "ghost mark", text: "−", "aria-label": "삭제" });
   remove.addEventListener("click", () => {
     const items = getItems();
@@ -1172,7 +1183,7 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
     queueSave();
     renderDesk();
   });
-  row.append(handle, grow, start, end, remove);
+  row.append(handle, grow, start, end, watch, remove);
   if (withLyrics) {
     const lyrics = el("textarea", { placeholder: "가사", maxlength: "4000" });
     lyrics.value = item.lyrics || "";
@@ -1183,6 +1194,104 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
     grow.append(lyrics);
   }
   return row;
+}
+
+function quietTime(text, fallback) {
+  if (!String(text || "").trim()) return fallback;
+  const value = parseTime(text);
+  return value == null ? fallback : value;
+}
+
+function playGlyph() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M8 5.5v13l11-6.5z");
+  svg.append(path);
+  return svg;
+}
+
+function watchButton(videoSource, rangeSource) {
+  const button = el("button", { type: "button", class: "ghost mark play", "aria-label": "재생" });
+  button.append(playGlyph());
+  button.addEventListener("click", () => {
+    const video = videoSource();
+    const id = video ? youtubeId(video.url) : "";
+    if (!id) {
+      toast("재생할 유튜브 영상을 찾지 못했습니다.");
+      return;
+    }
+    const range = rangeSource ? rangeSource() : {};
+    openWatch(id, video.title || "영상", range.start, range.end, button);
+  });
+  return button;
+}
+
+let watchKeyHandler = null;
+
+function closeWatch() {
+  const node = document.getElementById("watch");
+  if (node) {
+    const frame = node.querySelector("iframe");
+    if (frame) frame.src = "";
+    node.remove();
+  }
+  document.body.classList.remove("watch-open");
+  if (watchKeyHandler) {
+    document.removeEventListener("keydown", watchKeyHandler);
+    watchKeyHandler = null;
+  }
+}
+
+function openWatch(id, title, start, end, opener) {
+  closeWatch();
+  const params = new URLSearchParams({
+    autoplay: "1",
+    rel: "0",
+    modestbranding: "1",
+    playsinline: "1"
+  });
+  if (start) params.set("start", String(start));
+  if (end && (!start || end > start)) params.set("end", String(end));
+  const frame = document.createElement("iframe");
+  frame.src = "https://www.youtube.com/embed/" + id + "?" + params.toString();
+  frame.title = title;
+  frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+  frame.setAttribute("allowfullscreen", "");
+  const finish = () => {
+    closeWatch();
+    if (opener && opener.isConnected) opener.focus();
+  };
+  const close = el("button", { type: "button", text: "닫기" });
+  close.addEventListener("click", finish);
+  const scrim = el("button", { type: "button", class: "watch-scrim", "aria-label": "닫기" });
+  scrim.addEventListener("click", finish);
+  const dialog = el("div", {
+    class: "watch",
+    id: "watch",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": title
+  }, [
+    scrim,
+    el("div", { class: "watch-card" }, [
+      el("div", { class: "watch-head" }, [
+        el("strong", { text: title }),
+        close
+      ]),
+      el("div", { class: "watch-frame" }, [frame])
+    ])
+  ]);
+  document.body.append(dialog);
+  document.body.classList.add("watch-open");
+  watchKeyHandler = (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    finish();
+  };
+  document.addEventListener("keydown", watchKeyHandler);
+  close.focus();
 }
 
 function readTime(input, previous) {
