@@ -472,7 +472,7 @@ body.is-desk #desk {
 
 .login .actions { margin-top: 18px; }
 
-.login input, .line input, .adder input, .clip input, .grade-name, textarea, .video-row input, .play-span input {
+.login input, .line input, .adder input, .clip input, .grade-name, textarea, .video-row input, .play-span input, .grade-row input {
   box-sizing: border-box;
   width: 100%;
   min-height: 44px;
@@ -484,7 +484,7 @@ body.is-desk #desk {
   padding: 8px 10px;
 }
 
-.line input, .adder input, .clip input, .video-row input, .play-span input {
+.line input, .adder input, .clip input, .video-row input, .play-span input, .grade-row .time, .grade-row .suggest input {
   height: 36px;
   min-height: 36px;
   padding: 0 10px;
@@ -516,7 +516,7 @@ textarea { min-height: 96px; resize: vertical; }
 .clips:not(:empty) + .adder { margin-top: 16px; }
 
 .line input, .adder input, .video-row input { flex: 1 1 140px; width: auto; }
-.adder .time, .clip .time { flex: 0 0 88px; width: 88px; }
+.adder .time, .clip .time, .grade-row .time { flex: 0 0 88px; width: 88px; }
 .adder .time, .adder .mark { position: relative; z-index: 7; }
 
 .play-span {
@@ -663,7 +663,34 @@ body.watch-open { overflow: hidden; }
 .video-row, .line { margin-top: 8px; }
 .video-row + .video-row,
 .video-row + .line { margin-top: 16px; }
-.grade { margin-top: 12px; }
+.grades { display: flex; flex-direction: column; gap: 8px; }
+.grade-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+.grade-row:focus-within { position: relative; z-index: 3; }
+.grade-row .grade-name {
+  flex: 0 0 calc(4em + 20px);
+  width: calc(4em + 20px);
+  height: 36px;
+  min-height: 36px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.grade-row .suggest,
+.grade-row .grow { flex: 1 1 120px; min-width: 0; }
+.grade-row .suggest input { width: 100%; min-width: 0; max-width: 100%; }
+.desk .grade-row .grade-delete {
+  flex: 0 0 auto;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
 
 .handle {
   display: inline-flex;
@@ -697,7 +724,8 @@ body.watch-open { overflow: hidden; }
 
 .clip { align-items: flex-start; flex-wrap: nowrap; }
 .clip .grow { flex: 1 1 180px; min-width: 0; }
-.clip .grow strong {
+.clip .grow strong,
+.grade-row .grow strong {
   display: block;
   box-sizing: border-box;
   height: 36px;

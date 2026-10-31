@@ -177,11 +177,9 @@ function clipsForPage() {
   if (id === "grade") {
     const rows = [];
     state.doc.grades.forEach((grade) => {
-      grade.items.forEach((clip) => {
-        const video = findVideo(clip.video);
-        if (!video) return;
-        rows.push(viewClip(clip, video, grade));
-      });
+      const clip = grade.items[0];
+      const video = clip && findVideo(clip.video);
+      if (video) rows.push(viewClip(clip, video, grade));
     });
     return rows;
   }
@@ -1185,8 +1183,11 @@ function pageBlock(page) {
     el("h2", { text: page.title })
   ]);
   if (page.id === "grade") {
-    block.append(el("p", { class: "desk-note", text: "학년을 만들고, 각 학년에 영상을 넣습니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
-    state.doc.grades.forEach((grade) => block.append(gradeBlock(grade)));
+    block.append(el("p", { class: "desk-note", text: "학년에 영상을 한 곡만 넣습니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
+    const list = el("div", { class: "grades" });
+    state.doc.grades.forEach((grade) => list.append(gradeBlock(grade)));
+    block.append(list);
+    enableGradeDrag(list);
     const add = el("button", { type: "button", text: "학년 추가" });
     add.addEventListener("click", () => {
       state.doc.grades.push({ id: uid(), name: "학년", items: [] });
@@ -1209,7 +1210,8 @@ function pageBlock(page) {
 }
 
 function gradeBlock(grade) {
-  const box = el("div", { class: "grade" });
+  const row = el("div", { class: "grade-row" });
+  row.setAttribute("data-id", grade.id);
   const name = el("input", { class: "grade-name", value: grade.name, maxlength: "40", "aria-label": "학년 이름" });
   name.addEventListener("change", () => {
     const next = name.value.trim();
@@ -1221,20 +1223,130 @@ function gradeBlock(grade) {
     grade.name = next;
     queueSave();
   });
-  const remove = el("button", { type: "button", class: "ghost", text: "학년 삭제" });
+  const remove = el("button", { type: "button", class: "ghost grade-delete", text: "학년 삭제" });
   remove.addEventListener("click", () => {
     if (!window.confirm("이 학년을 지울까요?")) return;
     state.doc.grades = state.doc.grades.filter((item) => item.id !== grade.id);
     queueSave();
     renderDesk();
   });
-  box.append(el("div", { class: "grade-head" }, [name, remove]));
-  const gradeId = grade.id;
-  mountClips(box, () => {
-    const current = state.doc.grades.find((item) => item.id === gradeId);
-    return current ? current.items : [];
-  }, false);
-  return box;
+  row.append(grip(), name);
+  const item = grade.items[0];
+  if (item) gradeSong(row, grade, item);
+  else gradeAdder(row, grade);
+  row.append(remove);
+  return row;
+}
+
+function gradeSong(row, grade, item) {
+  const video = findVideo(item.video);
+  const start = el("input", { class: "time", value: formatTime(item.start), placeholder: "시작", "aria-label": "시작 시간" });
+  const end = el("input", { class: "time", value: formatTime(item.end), placeholder: "끝", "aria-label": "종료 시간" });
+  const applyTime = () => {
+    const nextStart = readTime(start, item.start);
+    const nextEnd = readTime(end, item.end);
+    if (nextStart === false || nextEnd === false) return;
+    if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
+      toast("끝나는 시간은 시작보다 뒤여야 합니다.");
+      start.value = formatTime(item.start);
+      end.value = formatTime(item.end);
+      return;
+    }
+    item.start = nextStart;
+    item.end = nextEnd;
+    queueSave();
+  };
+  start.addEventListener("change", applyTime);
+  end.addEventListener("change", applyTime);
+  const watch = watchButton(
+    () => findVideo(item.video),
+    () => ({
+      start: quietTime(start.value, item.start),
+      end: quietTime(end.value, item.end)
+    })
+  );
+  const clear = el("button", { type: "button", class: "ghost mark", text: "−", "aria-label": "영상 삭제" });
+  clear.addEventListener("click", () => {
+    const index = grade.items.findIndex((clip) => clip.id === item.id);
+    if (index >= 0) grade.items.splice(index, 1);
+    queueSave();
+    renderDesk();
+  });
+  row.append(
+    el("div", { class: "grow" }, [el("strong", { text: video ? video.title : "지워진 영상" })]),
+    start,
+    end,
+    watch,
+    clear
+  );
+}
+
+function gradeAdder(row, grade) {
+  const input = el("input", { type: "text", placeholder: "영상 제목 검색", autocomplete: "off", "aria-label": "영상" });
+  const matches = el("ul");
+  let picked = "";
+  const choose = (video) => {
+    picked = video.id;
+    input.value = video.title;
+    matches.replaceChildren();
+  };
+  const paintMatches = (query) => {
+    const needle = query.trim().toLowerCase();
+    matches.replaceChildren();
+    state.doc.videos.filter((video) => !needle || video.title.toLowerCase().includes(needle)).forEach((video) => {
+      const button = el("button", { type: "button", text: video.title });
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        choose(video);
+      });
+      matches.append(el("li", {}, [button]));
+    });
+  };
+  matches.addEventListener("mousedown", (event) => event.preventDefault());
+  const showAll = () => paintMatches("");
+  input.addEventListener("focus", showAll);
+  input.addEventListener("pointerdown", showAll);
+  input.addEventListener("input", () => {
+    picked = "";
+    paintMatches(input.value);
+  });
+  input.addEventListener("blur", () => matches.replaceChildren());
+  const start = el("input", { class: "time", placeholder: "시작", "aria-label": "시작 시간" });
+  const end = el("input", { class: "time", placeholder: "끝", "aria-label": "종료 시간" });
+  const add = el("button", { type: "button", class: "mark", text: "+", "aria-label": "추가" });
+  add.addEventListener("click", () => {
+    if (grade.items.length >= 1) {
+      toast("학년에는 영상을 한 곡만 넣을 수 있습니다.");
+      return;
+    }
+    const video = state.doc.videos.find((item) => item.id === picked) || state.doc.videos.find((item) => item.title === input.value.trim());
+    if (!video) {
+      toast("목록에 있는 영상 제목을 선택해 주세요.");
+      return;
+    }
+    const nextStart = readTime(start, null);
+    const nextEnd = readTime(end, null);
+    if (nextStart === false || nextEnd === false) return;
+    if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
+      toast("끝나는 시간은 시작보다 뒤여야 합니다.");
+      return;
+    }
+    grade.items.push({ id: uid(), video: video.id, start: nextStart, end: nextEnd });
+    queueSave();
+    renderDesk();
+  });
+  row.append(el("div", { class: "suggest" }, [input, matches]), start, end, add);
+}
+
+function enableGradeDrag(list) {
+  list.querySelectorAll(".grade-row > .handle").forEach((handle) => {
+    bindRowDrag(handle, ".grade-row", list, () => {
+      const order = Array.from(list.querySelectorAll(".grade-row")).map((item) => item.getAttribute("data-id"));
+      const next = order.map((id) => state.doc.grades.find((grade) => grade.id === id)).filter(Boolean);
+      state.doc.grades.splice(0, state.doc.grades.length, ...next);
+      queueSave();
+    });
+  });
 }
 
 function mountClips(container, getItems, withLyrics, playSeconds) {
@@ -1530,7 +1642,7 @@ function grip() {
 }
 
 function markLongTitles() {
-  document.querySelectorAll(".clip .grow strong").forEach((node) => {
+  document.querySelectorAll(".clip .grow strong, .grade-row .grow strong").forEach((node) => {
     if (node.scrollWidth > node.clientWidth + 1) node.title = node.textContent;
     else node.removeAttribute("title");
   });
