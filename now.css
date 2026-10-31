@@ -346,6 +346,17 @@ body.is-open #veil { display: none; }
   transform: translateX(-50%);
 }
 
+.lyrics-tools.is-inline {
+  width: max-content;
+  max-width: calc(100% - 24px);
+}
+
+.lyrics-tools.is-inline .overlay-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+}
+
 .overlay-btn {
   min-width: 148px;
   min-height: 61px;
@@ -784,5 +795,7 @@ body.watch-open { overflow: hidden; }
   .seek input[type="range"]::-moz-range-thumb { width: 28px; height: 28px; }
   #playlist { bottom: 68px; }
   .lyrics-tools { bottom: 68px; width: calc(100% - 24px); }
+  .lyrics-tools.is-inline { width: max-content; }
   .overlay-btn { flex: 1; min-width: 0; min-height: 44px; font-size: 16px; }
+  .lyrics-tools.is-inline .overlay-btn { flex: 0 0 auto; width: auto; }
 }

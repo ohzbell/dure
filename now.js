@@ -862,7 +862,7 @@ function paintStage() {
     return;
   }
   if (id === "random" && state.randomPhase === "play") {
-    stage.append(el("div", { class: "lyrics-tools" }, [videoToggleButton()]));
+    stage.append(el("div", { class: "lyrics-tools is-inline" }, [videoToggleButton()]));
     if (clip && !state.counting) stage.append(el("p", { class: "random-title", text: clip.title }));
     return;
   }
