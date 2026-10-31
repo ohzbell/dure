@@ -1512,23 +1512,34 @@ function seekRatio(ratio) {
   paintSeekFill(document.getElementById("seek-range"));
 }
 
+function playbackBlocked() {
+  if (pageId() === "random" && state.randomPhase !== "play") return true;
+  if (pageId() === "guess" && !state.revealed) return true;
+  return !currentClip();
+}
+
+function playerCode() {
+  try { return player && player.getPlayerState ? player.getPlayerState() : -1; } catch (error) { return -1; }
+}
+
+function resumePlay() {
+  if (playbackBlocked()) return;
+  const code = playerCode();
+  const same = state.loadedId === currentClip().clipId;
+  if (same && code === 1) return;
+  state.needRestart = !(same && code === 2);
+  playCurrent();
+}
+
+function pausePlay() {
+  try { if (player) player.pauseVideo(); } catch (error) { /* ignore */ }
+}
+
 function bindShow() {
   document.getElementById("page-prev").addEventListener("click", () => setPage(state.page - 1));
   document.getElementById("page-next").addEventListener("click", goNextPage);
-  document.getElementById("play").addEventListener("click", () => {
-    if (pageId() === "random" && state.randomPhase !== "play") return;
-    const clip = currentClip();
-    if (pageId() === "guess" && !state.revealed) return;
-    let code = -1;
-    try { code = player.getPlayerState(); } catch (error) { code = -1; }
-    const same = clip && state.loadedId === clip.clipId;
-    if (same && code === 1) return;
-    state.needRestart = !(same && code === 2);
-    playCurrent();
-  });
-  document.getElementById("pause").addEventListener("click", () => {
-    try { if (player) player.pauseVideo(); } catch (error) { /* ignore */ }
-  });
+  document.getElementById("play").addEventListener("click", resumePlay);
+  document.getElementById("pause").addEventListener("click", pausePlay);
   document.getElementById("next-track").addEventListener("click", nextTrack);
   const range = document.getElementById("seek-range");
   range.addEventListener("pointerdown", (event) => {
@@ -1550,7 +1561,17 @@ function bindShow() {
   document.addEventListener("keydown", (event) => {
     if (state.desk) return;
     const tag = event.target && event.target.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    const typing = tag === "TEXTAREA" || (tag === "INPUT" && event.target.type !== "range");
+    if (event.key === " ") {
+      if (typing) return;
+      event.preventDefault();
+      if (event.repeat || state.counting || playbackBlocked()) return;
+      const code = playerCode();
+      if (code === 1 || code === 3) pausePlay();
+      else resumePlay();
+      return;
+    }
+    if (typing || tag === "INPUT") return;
     if (event.key === "ArrowLeft") setPage(state.page - 1);
     if (event.key === "ArrowRight") goNextPage();
   });
