@@ -47,6 +47,8 @@ const state = {
   randomPhase: "start",
   loadedId: "",
   needRestart: true,
+  windowDone: false,
+  releaseEnd: false,
   dragging: false,
   saving: false,
   admin: false,
@@ -706,7 +708,13 @@ function onPlayerState(event) {
   const clips = clipsForPage();
   const current = clips[state.clip];
   if (!current || current.clipId !== state.loadedId) return;
-  if (pageId() !== "random") return;
+  if (pageId() !== "random") {
+    if (state.releaseEnd) {
+      state.releaseEnd = false;
+      state.windowDone = false;
+    } else if (current.end != null) state.windowDone = true;
+    return;
+  }
   state.loadedId = "";
   state.needRestart = true;
   if (state.randomPhase !== "play") return;
@@ -743,7 +751,8 @@ function showFinish() {
 function clipArgs(clip) {
   const id = youtubeId(clip.url);
   if (!id) return null;
-  const keepGoing = pageId() === "lyrics" && state.lyricsShown;
+  const playing = currentClip();
+  const keepGoing = !!playing && clip.clipId === playing.clipId && (state.releaseEnd || (pageId() === "lyrics" && state.lyricsShown));
   const args = { videoId: id, startSeconds: keepGoing && clip.end != null ? clip.end : (clip.start || 0) };
   if (!keepGoing && clip.end) args.endSeconds = clip.end;
   return args;
@@ -884,7 +893,7 @@ function playCurrent() {
   const clipId = clip.clipId;
   state.startedKey = pageId() + ":" + clipId;
   paintPlayTip();
-  if (state.lyricsShown) {
+  if (state.lyricsShown && !state.releaseEnd) {
     state.lyricsShown = false;
     paint();
   }
@@ -896,6 +905,8 @@ function stopVideo(keepClipId) {
   armEnd = false;
   state.loadedId = "";
   state.needRestart = true;
+  state.windowDone = false;
+  state.releaseEnd = false;
   try { if (player && player.stopVideo) player.stopVideo(); } catch (error) { /* not ready */ }
   if (!keepClipId || keepClipId !== standbyClipId) {
     standbyClipId = "";
@@ -2670,9 +2681,9 @@ function pageBlock(page) {
   const note = page.id === "random"
     ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 전체적용하면 끝은 시작 시간에 그 초를 더한 값이 됩니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀝니다."
     : page.id === "lyrics"
-      ? "영상 제목을 고르고 가사를 입력합니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀌고, 비워 두면 처음부터 끝까지입니다."
+      ? ""
       : "영상 제목을 검색해 넣습니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀌고, 비워 두면 처음부터 끝까지입니다.";
-  block.append(el("p", { class: "desk-note", text: note }));
+  if (note) block.append(el("p", { class: "desk-note", text: note }));
   block.append(saveAllBar());
   if (page.id === "random") block.append(playSpanBar());
   const sectionId = page.id;
@@ -3551,7 +3562,7 @@ function clipBounds(clip) {
   try { duration = player && player.getDuration ? player.getDuration() || 0 : 0; } catch (error) { duration = 0; }
   const start = clip.start || 0;
   let end = clip.end == null ? duration : clip.end;
-  if (pageId() === "lyrics" && state.lyricsShown && duration > end) end = duration;
+  if (duration > end && (state.releaseEnd || (pageId() === "lyrics" && state.lyricsShown))) end = duration;
   if (duration && end > duration) end = duration;
   if (!(end > start)) end = duration > start ? duration : start + 1;
   return { start: start, end: end };
@@ -3630,11 +3641,29 @@ function playerCode() {
   try { return player && player.getPlayerState ? player.getPlayerState() : -1; } catch (error) { return -1; }
 }
 
+function holdAtEnd(clip) {
+  if (!clip || clip.end == null || state.releaseEnd || state.loadedId !== clip.clipId) return false;
+  if (state.windowDone) return true;
+  const code = playerCode();
+  if (code !== 0 && code !== 2) return false;
+  let now = 0;
+  try { now = player.getCurrentTime() || 0; } catch (error) { return false; }
+  return now >= clip.end - 0.6;
+}
+
 function resumePlay() {
   if (playbackBlocked()) return;
+  const clip = currentClip();
   const code = playerCode();
-  const same = state.loadedId === currentClip().clipId;
+  const same = state.loadedId === clip.clipId;
   if (same && code === 1) return;
+  if (holdAtEnd(clip)) {
+    state.windowDone = false;
+    state.releaseEnd = true;
+    state.needRestart = true;
+    playCurrent();
+    return;
+  }
   state.needRestart = !(same && (code === 2 || code === 5));
   playCurrent();
 }
