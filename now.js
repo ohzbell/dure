@@ -244,21 +244,6 @@ function pageId() {
   return pages[state.page].id;
 }
 
-function isWorship(id) {
-  const page = catalog().find((item) => item.id === id);
-  return !!page && pageTitle(page).indexOf("주일예배") !== -1;
-}
-
-function isSlide(id) {
-  return id === "sermon" || isWorship(id);
-}
-
-function slideUrl(id) {
-  if (id === "sermon") return sermonUrl();
-  const section = (state.doc.sections || []).find((item) => item.id === id);
-  return (section && section.url) || "";
-}
-
 function findVideo(id) {
   return state.doc.videos.find((video) => video.id === id) || null;
 }
@@ -279,7 +264,7 @@ function clipsForPage() {
       gradeId: ""
     }];
   }
-  if (id === "sermon" || id === "scripture" || isWorship(id)) return [];
+  if (id === "sermon" || id === "scripture") return [];
   if (id === "grade") {
     const rows = [];
     state.doc.grades.forEach((grade) => {
@@ -1071,7 +1056,7 @@ function syncVeil() {
     document.body.classList.add("is-open");
     return;
   }
-  if (id === "sermon" || id === "scripture" || isWorship(id)) {
+  if (id === "sermon" || id === "scripture") {
     document.body.classList.remove("is-open");
     return;
   }
@@ -1089,7 +1074,7 @@ function subtitle() {
   if (state.finished) return "";
   const clip = currentClip();
   const id = pageId();
-  if (id === "sermon" || id === "birthday" || id === "scripture" || isWorship(id)) return "";
+  if (id === "sermon" || id === "birthday" || id === "scripture") return "";
   if (!clip || state.counting || !titleShown(id) || sectionView(id).title !== "top") return "";
   if (id === "random" && state.randomPhase !== "play") return "";
   if ((id === "guess" || id === "lyrics") && !(id === "guess" ? state.revealed : state.lyricsShown)) return "";
@@ -1128,7 +1113,6 @@ function stageKey() {
     finished: state.finished,
     verse: state.verse,
     sermon: state.doc.sermon && state.doc.sermon.url,
-    slides: (state.doc.sections || []).map((section) => section.id + ":" + (section.url || "")).join("|"),
     birthday: state.doc.birthday,
     scripture: state.doc.scripture,
     random: state.randomPhase
@@ -1137,7 +1121,7 @@ function stageKey() {
 
 function clipCountLabel() {
   const id = pageId();
-  if (!id || id === "sermon" || id === "birthday" || id === "scripture" || isWorship(id)) return "";
+  if (!id || id === "sermon" || id === "birthday" || id === "scripture") return "";
   const total = clipsForPage().length;
   if (!total) return "";
   const current = Math.min(Math.max(state.clip, 0), total - 1) + 1;
@@ -1153,7 +1137,7 @@ function visibleTitle(page) {
 
 function paint() {
   const page = pageOrder()[state.page];
-  document.body.classList.toggle("is-sermon", !state.desk && !!page && isSlide(page.id));
+  document.body.classList.toggle("is-sermon", !state.desk && !!page && page.id === "sermon");
   document.body.classList.toggle("is-birthday", !state.desk && !!page && page.id === "birthday");
   document.body.classList.toggle("is-scripture", !state.desk && !!page && page.id === "scripture");
   const title = document.getElementById("page-title");
@@ -1171,7 +1155,7 @@ function paint() {
   } else if (!subtitle()) sub.replaceChildren();
   else paintSongTitle(sub, currentClip());
   paintNav();
-  if (!state.desk) document.title = page.id === "sermon" ? "설교" : (isWorship(page.id) ? page.title : (visibleTitle(page) || page.title));
+  if (!state.desk) document.title = page.id === "sermon" ? "설교" : (visibleTitle(page) || page.title);
   syncVeil();
   paintSeek();
   const key = stageKey();
@@ -1183,7 +1167,7 @@ function paint() {
   if (state.sectionsOpen) paintSections();
   paintPlayTip();
   paintCanva();
-  if (!state.desk && !state.counting && !state.finished && !isSlide(page.id) && page.id !== "scripture") prepareClip(false);
+  if (!state.desk && !state.counting && !state.finished && page.id !== "sermon" && page.id !== "scripture") prepareClip(false);
 }
 
 function paintStage() {
@@ -1195,8 +1179,8 @@ function paintStage() {
     stage.append(el("p", { class: "finish-show", text: "Finish!" }));
     return;
   }
-  if (isSlide(id)) {
-    if (!canvaEmbed(slideUrl(id))) stage.append(el("p", { class: "sermon-empty", text: "캔바 슬라이드 주소를 넣어 주세요." }));
+  if (id === "sermon") {
+    if (!canvaEmbed(sermonUrl())) stage.append(el("p", { class: "sermon-empty", text: "캔바 슬라이드 주소를 넣어 주세요." }));
     return;
   }
   if (id === "birthday") {
@@ -1490,8 +1474,8 @@ function canvaFrameUrl(url) {
 function paintCanva() {
   const frame = document.getElementById("canva");
   if (!frame) return;
-  const show = !state.desk && isSlide(pageId());
-  const url = show ? canvaFrameUrl(slideUrl(pageId())) : "";
+  const show = !state.desk && pageId() === "sermon";
+  const url = show ? canvaFrameUrl(sermonUrl()) : "";
   if (!url) {
     frame.hidden = true;
     if (frame.getAttribute("src")) frame.removeAttribute("src");
@@ -1860,10 +1844,6 @@ function deskSection(id) {
   if (id === "cue") return cueBlock();
   if (id === "accounts") return accountBlock();
   if (id === "sermon") return sermonBlock();
-  if (isWorship(id)) {
-    const worship = findPage(id);
-    if (worship) return worshipBlock(worship);
-  }
   if (id === "birthday") return birthdayBlock();
   if (id === "scripture") return scriptureBlock();
   return pageBlock(findPage(id));
@@ -2499,41 +2479,6 @@ function openNameModal(page) {
   document.body.append(overlay);
   input.focus();
   input.select();
-}
-
-function worshipBlock(page) {
-  const section = (state.doc.sections || []).find((item) => item.id === page.id);
-  const current = (section && section.url) || "";
-  const input = el("input", {
-    class: "wide-input",
-    value: current,
-    maxlength: "500",
-    placeholder: "https://canva.link/…",
-    "aria-label": "캔바 URL"
-  });
-  input.addEventListener("change", () => {
-    const found = (state.doc.sections || []).find((item) => item.id === page.id);
-    if (!found) return;
-    const next = input.value.trim();
-    if (!next) {
-      found.url = "";
-      queueSave();
-      return;
-    }
-    const embed = canvaEmbed(next);
-    if (!embed) {
-      toast("캔바 슬라이드 주소를 확인해 주세요.");
-      input.value = found.url || "";
-      return;
-    }
-    found.url = embed;
-    input.value = embed;
-    queueSave();
-  });
-  return el("section", { class: "desk-block feature-block" }, [
-    el("h2", { text: page.title }),
-    input
-  ]);
 }
 
 function pageBlock(page) {
@@ -3348,14 +3293,14 @@ function playNeedsButton() {
   const clip = currentClip();
   const id = pageId();
   if (!clip || state.desk || state.counting || state.finished) return false;
-  if (id === "random" || id === "scripture" || isSlide(id)) return false;
+  if (id === "random" || id === "scripture" || id === "sermon") return false;
   return state.startedKey !== id + ":" + clip.clipId;
 }
 
 function playbackBlocked() {
   if (state.finished) return true;
   const id = pageId();
-  if (id === "scripture" || isSlide(id)) return true;
+  if (id === "scripture" || id === "sermon") return true;
   if (id === "random" && state.randomPhase !== "play") return true;
   return !currentClip();
 }
