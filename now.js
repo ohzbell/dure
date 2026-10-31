@@ -1442,13 +1442,14 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
   });
   row.append(handle, grow, start, end, watch, remove);
   if (withLyrics) {
-    const lyrics = el("textarea", { placeholder: "가사", maxlength: "4000" });
+    row.classList.add("has-lyrics");
+    const lyrics = el("textarea", { class: "lyrics-field", rows: "2", placeholder: "가사", maxlength: "4000" });
     lyrics.value = item.lyrics || "";
     lyrics.addEventListener("change", () => {
       item.lyrics = lyrics.value.trim();
       queueSave();
     });
-    grow.append(lyrics);
+    row.append(lyrics);
   }
   return row;
 }
@@ -1595,7 +1596,7 @@ function adder(getItems, withLyrics, playSeconds) {
   input.addEventListener("blur", () => matches.replaceChildren());
   const start = el("input", { class: "time", placeholder: "시작", "aria-label": "시작 시간" });
   const end = el("input", { class: "time", placeholder: "끝", "aria-label": "종료 시간" });
-  const lyrics = withLyrics ? el("textarea", { placeholder: "가사", maxlength: "4000" }) : null;
+  const lyrics = withLyrics ? el("textarea", { class: "lyrics-field", rows: "2", placeholder: "가사", maxlength: "4000" }) : null;
   const add = el("button", { type: "button", class: "mark", text: "+", "aria-label": "추가" });
   add.addEventListener("click", () => {
     const video = state.doc.videos.find((item) => item.id === picked) || state.doc.videos.find((item) => item.title === input.value.trim());
