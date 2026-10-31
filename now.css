@@ -76,6 +76,16 @@ body.is-open #veil { display: none; }
   text-shadow: 0 2px 18px #000;
 }
 
+.clip-count {
+  margin-left: 0.35em;
+  color: #d8d8d8;
+  font-size: 0.38em;
+  font-weight: 700;
+  letter-spacing: 0;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 #page-sub {
   min-height: 0;
   margin: 6px 0 0;

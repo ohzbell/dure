@@ -30,6 +30,7 @@ const state = {
   titleChoice: {},
   listOpen: false,
   counting: false,
+  finished: false,
   randomPhase: "start",
   loadedId: "",
   needRestart: true,
@@ -551,7 +552,7 @@ function onPlayerState(event) {
   if (pageId() === "random") {
     if (state.randomPhase !== "play") return;
     if (state.clip >= clips.length - 1) {
-      finishRandom();
+      showFinish();
       return;
     }
     state.clip += 1;
@@ -574,6 +575,7 @@ function startRandom() {
     return;
   }
   stopCue();
+  state.finished = false;
   state.randomPhase = "play";
   state.clip = 0;
   state.revealed = false;
@@ -581,10 +583,11 @@ function startRandom() {
   countdownThenPlay(playGen);
 }
 
-function finishRandom() {
+function showFinish() {
   stopCue();
   stopVideo();
-  state.randomPhase = "finish";
+  state.finished = true;
+  if (pageId() === "random") state.randomPhase = "finish";
   paint();
 }
 
@@ -804,11 +807,12 @@ function nextTrack() {
     stopCue();
     return;
   }
-  if (random && state.clip >= clips.length - 1) {
-    finishRandom();
+  if (state.finished) return;
+  if (state.clip >= clips.length - 1) {
+    showFinish();
     return;
   }
-  const nextIndex = random ? state.clip + 1 : (state.clip + 1) % clips.length;
+  const nextIndex = state.clip + 1;
   const next = clips[nextIndex];
   stopVideo(next && next.clipId);
   stopCue();
@@ -828,6 +832,7 @@ function jumpTo(index) {
   state.clip = index;
   state.revealed = false;
   state.lyricsShown = false;
+  state.finished = false;
   state.needRestart = true;
   if (pageId() === "random") {
     state.randomPhase = "play";
@@ -875,6 +880,7 @@ function setPage(index) {
   state.clip = 0;
   state.revealed = false;
   state.lyricsShown = false;
+  state.finished = false;
   if (pages[state.page].id === "random") state.randomPhase = "start";
   history.replaceState(null, "", "#" + pages[state.page].id);
   paint();
@@ -929,6 +935,7 @@ function syncVeil() {
 }
 
 function subtitle() {
+  if (state.finished) return "";
   const clip = currentClip();
   const id = pageId();
   if (!clip || state.counting || !titleShown(id) || sectionView(id).title !== "top") return "";
@@ -965,13 +972,24 @@ function stageKey() {
     veil: sectionView(pageId()).veil,
     titleHide: sectionView(pageId()).titleHide,
     counting: state.counting,
+    finished: state.finished,
     random: state.randomPhase
   });
 }
 
+function clipCountLabel() {
+  const total = clipsForPage().length;
+  if (!total) return "";
+  const current = Math.min(Math.max(state.clip, 0), total - 1) + 1;
+  return "[" + current + "/" + total + "]";
+}
+
 function paint() {
   const page = pageOrder()[state.page];
-  document.getElementById("page-title").textContent = page.title;
+  const title = document.getElementById("page-title");
+  const count = clipCountLabel();
+  title.replaceChildren(document.createTextNode(page.title));
+  if (count) title.append(el("span", { class: "clip-count", text: count }));
   const sub = document.getElementById("page-sub");
   if (!subtitle()) sub.replaceChildren();
   else paintSongTitle(sub, currentClip());
@@ -986,7 +1004,7 @@ function paint() {
   }
   if (state.listOpen) paintList();
   paintPlayTip();
-  if (!state.desk && !state.counting) prepareClip(false);
+  if (!state.desk && !state.counting && !state.finished) prepareClip(false);
 }
 
 function paintStage() {
@@ -994,14 +1012,14 @@ function paintStage() {
   stage.replaceChildren();
   const id = pageId();
   const clip = currentClip();
+  if (state.finished || (id === "random" && state.randomPhase === "finish")) {
+    stage.append(el("p", { class: "finish-show", text: "Finish!" }));
+    return;
+  }
   if (id === "random" && state.randomPhase === "start") {
     const button = el("button", { type: "button", class: "answer", text: "Start" });
     button.addEventListener("click", startRandom);
     stage.append(button);
-    return;
-  }
-  if (id === "random" && state.randomPhase === "finish") {
-    stage.append(el("p", { class: "finish-show", text: "Finish!" }));
     return;
   }
   if (id === "random" && state.randomPhase === "play") {
@@ -2383,7 +2401,7 @@ function clipBounds(clip) {
 
 function seekVisible() {
   const clip = currentClip();
-  if (!clip || state.desk || state.counting || state.loadedId !== clip.clipId) return false;
+  if (!clip || state.desk || state.counting || state.finished || state.loadedId !== clip.clipId) return false;
   if (pageId() === "random" && state.randomPhase !== "play") return false;
   return true;
 }
@@ -2437,12 +2455,13 @@ function paintPlayTip() {
 function playNeedsButton() {
   const clip = currentClip();
   const id = pageId();
-  if (!clip || state.desk || state.counting) return false;
+  if (!clip || state.desk || state.counting || state.finished) return false;
   if (id === "random") return false;
   return state.startedKey !== id + ":" + clip.clipId;
 }
 
 function playbackBlocked() {
+  if (state.finished) return true;
   if (pageId() === "random" && state.randomPhase !== "play") return true;
   return !currentClip();
 }
