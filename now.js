@@ -1769,35 +1769,98 @@ function bindRowDrag(handle, rowSelector, container, onDrop) {
     const row = handle.closest(rowSelector);
     if (!row || !container.contains(row)) return;
     event.preventDefault();
-    state.dragging = true;
-    row.classList.add("is-dragging");
     const pointerId = event.pointerId;
+    const startY = event.clientY;
+    const orderBefore = rowOrder(container, rowSelector);
+    let lifted = false;
+    let placeholder = null;
+    let grabOffset = 0;
     try { handle.setPointerCapture(pointerId); } catch (error) { /* pointer already released */ }
     let done = false;
+    const lift = () => {
+      if (lifted) return;
+      lifted = true;
+      state.dragging = true;
+      const origin = row.getBoundingClientRect();
+      grabOffset = startY - origin.top;
+      placeholder = document.createElement("div");
+      placeholder.className = "drag-placeholder";
+      placeholder.style.height = origin.height + "px";
+      row.before(placeholder);
+      row.classList.add("is-dragging");
+      row.style.width = origin.width + "px";
+      row.style.left = origin.left + "px";
+      row.style.top = origin.top + "px";
+    };
     const move = (ev) => {
       if (ev.pointerId !== pointerId) return;
-      const rows = Array.from(container.children).filter((item) => item.matches(rowSelector));
-      const target = rows.find((item) => {
+      if (!lifted) {
+        if (Math.abs(ev.clientY - startY) < 4) return;
+        lift();
+      }
+      row.style.top = (ev.clientY - grabOffset) + "px";
+      const flow = Array.from(container.children).filter((item) => item !== row);
+      const target = flow.find((item) => {
+        if (item === placeholder) return false;
         const box = item.getBoundingClientRect();
         return ev.clientY < box.top + box.height / 2;
       });
-      if (target && target !== row) container.insertBefore(row, target);
-      else if (!target && container.lastElementChild !== row) container.append(row);
+      if (target) {
+        if (placeholder.nextElementSibling === target) return;
+        slideRows(container, rowSelector, () => container.insertBefore(placeholder, target));
+        return;
+      }
+      if (container.lastElementChild !== placeholder) {
+        slideRows(container, rowSelector, () => container.append(placeholder));
+      }
     };
     const finish = (ev) => {
       if (done) return;
       if (ev && ev.pointerId != null && ev.pointerId !== pointerId) return;
       done = true;
-      state.dragging = false;
-      row.classList.remove("is-dragging");
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", finish);
       document.removeEventListener("pointercancel", finish);
-      onDrop();
+      if (!lifted) return;
+      state.dragging = false;
+      if (placeholder && placeholder.parentNode) placeholder.replaceWith(row);
+      row.classList.remove("is-dragging");
+      row.style.position = "";
+      row.style.left = "";
+      row.style.top = "";
+      row.style.width = "";
+      row.style.transform = "";
+      row.style.transition = "";
+      if (rowOrder(container, rowSelector) !== orderBefore) onDrop();
     };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", finish);
     document.addEventListener("pointercancel", finish);
+  });
+}
+
+function rowOrder(container, rowSelector) {
+  return Array.from(container.querySelectorAll(rowSelector)).map((item) => item.getAttribute("data-id")).join("\n");
+}
+
+function slideRows(container, rowSelector, change) {
+  const before = new Map();
+  Array.from(container.children).forEach((item) => {
+    if (item.matches(rowSelector) && !item.classList.contains("is-dragging")) before.set(item, item.getBoundingClientRect().top);
+  });
+  change();
+  Array.from(container.children).forEach((item) => {
+    if (!before.has(item)) return;
+    const delta = before.get(item) - item.getBoundingClientRect().top;
+    if (!delta) return;
+    item.style.transition = "none";
+    item.style.transform = "translateY(" + delta + "px)";
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        item.style.transition = "";
+        item.style.transform = "";
+      });
+    });
   });
 }
 

@@ -766,12 +766,24 @@ body.watch-open { overflow: hidden; }
 .handle:active { cursor: grabbing; }
 .handle svg { width: 14px; height: 10px; display: block; pointer-events: none; }
 
-.clip, .desk-tab-row { transition: background 0.12s ease; }
-.clip.is-dragging, .desk-tab-row.is-dragging {
-  position: relative;
-  z-index: 2;
+.clip, .grade-row, .desk-tab-row { transition: background 0.12s ease, transform 0.18s ease; }
+.clip.is-dragging, .grade-row.is-dragging, .desk-tab-row.is-dragging {
+  position: fixed;
+  z-index: 20;
+  box-sizing: border-box;
+  margin: 0;
   background: #161616;
   border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.48);
+  pointer-events: none;
+}
+.drag-placeholder {
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 .clip { align-items: flex-start; flex-wrap: nowrap; }
