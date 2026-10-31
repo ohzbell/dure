@@ -970,6 +970,21 @@ function countdownThenPlay(gen) {
   audio.play().catch(finish);
 }
 
+function prevTrack() {
+  const clips = clipsForPage();
+  if (!clips.length) {
+    toast("이 화면에 넣은 영상이 없습니다.");
+    return;
+  }
+  const random = pageId() === "random";
+  if (random && state.randomPhase !== "play" && !state.finished) {
+    stopVideo();
+    stopCue();
+    return;
+  }
+  jumpTo(state.finished ? clips.length - 1 : Math.max(0, state.clip - 1));
+}
+
 function nextTrack() {
   const clips = clipsForPage();
   if (!clips.length) {
@@ -3658,6 +3673,7 @@ function bindShow() {
   paintVolume();
   document.getElementById("play-tip").addEventListener("click", resumePlay);
   document.getElementById("pause").addEventListener("click", pausePlay);
+  document.getElementById("prev-track").addEventListener("click", prevTrack);
   document.getElementById("next-track").addEventListener("click", nextTrack);
   const range = document.getElementById("seek-range");
   range.addEventListener("pointerdown", (event) => {
