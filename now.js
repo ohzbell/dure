@@ -748,36 +748,43 @@ function showFinish() {
 function clipArgs(clip) {
   const id = youtubeId(clip.url);
   if (!id) return null;
+  if (pageId() === "lyrics") return { videoId: id, startSeconds: clip.start || 0 };
   const playing = currentClip();
-  const keepGoing = !!playing && clip.clipId === playing.clipId && (state.releaseEnd || (pageId() === "lyrics" && state.lyricsShown));
+  const keepGoing = !!playing && clip.clipId === playing.clipId && state.releaseEnd;
   const args = { videoId: id, startSeconds: keepGoing && clip.end != null ? clip.end : (clip.start || 0) };
   if (!keepGoing && clip.end) args.endSeconds = clip.end;
   return args;
 }
 
-function continueLyrics() {
-  applyVolume();
+function resumeLyrics() {
   const clip = currentClip();
   if (!clip || !player) {
     state.needRestart = true;
     return;
   }
-  if (clip.end == null) {
-    try { player.playVideo(); } catch (error) { /* already playing */ }
-    speak(player);
-    return;
-  }
-  const args = clipArgs(clip);
-  if (!args) return;
-  armEnd = false;
-  state.loadedId = clip.clipId;
+  state.releaseEnd = true;
+  state.windowDone = false;
   state.needRestart = false;
+  state.loadedId = clip.clipId;
   try {
-    player.loadVideoById(args);
+    player.playVideo();
     speak(player);
   } catch (error) {
     state.needRestart = true;
   }
+}
+
+function guardLyricsEnd() {
+  if (pageId() !== "lyrics" || state.releaseEnd || state.windowDone || state.desk) return;
+  const clip = currentClip();
+  if (!clip || clip.end == null || !player || state.loadedId !== clip.clipId) return;
+  if (playerCode() !== 1) return;
+  let now = 0;
+  try { now = player.getCurrentTime() || 0; } catch (error) { return; }
+  if (now + 0.12 < clip.end) return;
+  state.windowDone = true;
+  try { player.seekTo(clip.end, true); } catch (error) { /* keep the current frame */ }
+  try { player.pauseVideo(); } catch (error) { /* already quiet */ }
 }
 
 function primeNext() {
@@ -1337,7 +1344,7 @@ function paintStage() {
       const button = el("button", { type: "button", class: "answer", text: "정답" });
       button.addEventListener("click", () => {
         state.lyricsShown = true;
-        continueLyrics();
+        resumeLyrics();
         paint();
         if (state.needRestart) prepareClip(true);
       });
@@ -3568,8 +3575,12 @@ function clipBounds(clip) {
   let duration = 0;
   try { duration = player && player.getDuration ? player.getDuration() || 0 : 0; } catch (error) { duration = 0; }
   const start = clip.start || 0;
+  if (pageId() === "lyrics") {
+    const songEnd = duration > start ? duration : (clip.end != null && clip.end > start ? clip.end : start + 1);
+    return { start: start, end: songEnd };
+  }
   let end = clip.end == null ? duration : clip.end;
-  if (duration > end && (state.releaseEnd || (pageId() === "lyrics" && state.lyricsShown))) end = duration;
+  if (duration > end && state.releaseEnd) end = duration;
   if (duration && end > duration) end = duration;
   if (!(end > start)) end = duration > start ? duration : start + 1;
   return { start: start, end: end };
@@ -3593,6 +3604,7 @@ function paintSeek() {
   const show = seekVisible();
   bar.hidden = !show;
   if (!show) return;
+  guardLyricsEnd();
   const bounds = clipBounds(currentClip());
   const span = Math.max(0.01, bounds.end - bounds.start);
   if (seeking) return;
@@ -3664,7 +3676,11 @@ function resumePlay() {
   const code = playerCode();
   const same = state.loadedId === clip.clipId;
   if (same && code === 1) return;
-  if (holdAtEnd(clip)) {
+  if (pageId() === "lyrics" && state.windowDone && code === 2) {
+    resumeLyrics();
+    return;
+  }
+  if (pageId() !== "lyrics" && holdAtEnd(clip)) {
     state.windowDone = false;
     state.releaseEnd = true;
     state.needRestart = true;
