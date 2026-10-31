@@ -150,8 +150,11 @@ function parseTime(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
   if (/^\d+$/.test(raw)) {
-    if (raw.length <= 2) return clampSec(Number(raw));
-    return clampSec(Number(raw.slice(0, -2)) * 60 + Number(raw.slice(-2)));
+    const seconds = Number(raw.slice(-2));
+    const rest = raw.slice(0, -2);
+    const minutes = Number(rest.slice(-2) || 0);
+    const hours = Number(rest.slice(0, -2) || 0);
+    return clampSec(hours * 3600 + minutes * 60 + seconds);
   }
   const parts = raw.split(":");
   if (parts.length < 2 || parts.length > 3) return null;
@@ -2600,7 +2603,7 @@ function pageBlock(page) {
     viewBar(page.id)
   ]);
   if (page.id === "grade") {
-    block.append(el("p", { class: "desk-note", text: "아래 칸에 학년, 영상, 시작, 끝을 입력하고 +를 누르면 한 곡이 추가됩니다. 시작·끝은 130을 넣으면 1:30으로 바뀝니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
+    block.append(el("p", { class: "desk-note", text: "아래 칸에 학년, 영상, 시작, 끝을 입력하고 +를 누르면 한 곡이 추가됩니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀝니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
     const list = el("div", { class: "grades" });
     state.doc.grades.forEach((grade) => list.append(gradeBlock(grade)));
     block.append(list);
@@ -2609,10 +2612,10 @@ function pageBlock(page) {
     return block;
   }
   const note = page.id === "random"
-    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 전체적용하면 끝은 시작 시간에 그 초를 더한 값이 됩니다. 시작·끝은 130을 넣으면 1:30으로 바뀝니다."
+    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 전체적용하면 끝은 시작 시간에 그 초를 더한 값이 됩니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀝니다."
     : page.id === "lyrics"
-      ? "영상 제목을 고르고 가사를 입력합니다. 시작·끝은 130을 넣으면 1:30으로 바뀌고, 비워 두면 처음부터 끝까지입니다."
-      : "영상 제목을 검색해 넣습니다. 시작·끝은 130을 넣으면 1:30으로 바뀌고, 비워 두면 처음부터 끝까지입니다.";
+      ? "영상 제목을 고르고 가사를 입력합니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀌고, 비워 두면 처음부터 끝까지입니다."
+      : "영상 제목을 검색해 넣습니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀌고, 비워 두면 처음부터 끝까지입니다.";
   block.append(el("p", { class: "desk-note", text: note }));
   if (page.id === "random") block.append(playSpanBar());
   const sectionId = page.id;
@@ -3027,7 +3030,7 @@ function bindTimeFormat(input) {
     const value = parseTime(input.value);
     if (value == null) {
       if (!force) return;
-      toast("시간은 130 또는 1:30처럼 입력해 주세요.");
+      toast("시간은 123, 4545, 2:34:45처럼 입력해 주세요.");
       input.value = "";
       return;
     }
@@ -3041,7 +3044,7 @@ function readTime(input, previous, force) {
   const value = parseTime(input.value);
   if (value == null) {
     if (!force) return false;
-    toast("시간은 130 또는 1:30처럼 입력해 주세요.");
+    toast("시간은 123, 4545, 2:34:45처럼 입력해 주세요.");
     input.value = formatTime(previous);
     return false;
   }
