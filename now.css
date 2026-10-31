@@ -462,7 +462,7 @@ body.is-desk #desk {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: 240px;
+  width: 264px;
   margin: 0;
   padding: 16px 12px;
   overflow: auto;
@@ -471,7 +471,7 @@ body.is-desk #desk {
 }
 
 .desk-main {
-  margin-left: 240px;
+  margin-left: 264px;
   max-width: 880px;
   padding: 24px 20px 80px;
 }
@@ -1374,4 +1374,23 @@ body.watch-open { overflow: hidden; }
   .lyrics-tools.is-inline { width: max-content; }
   .overlay-btn { flex: 1; min-width: 0; min-height: 44px; font-size: 16px; }
   .lyrics-tools.is-inline .overlay-btn { flex: 0 0 auto; width: auto; }
+  #page-title,
+  #page-sub,
+  .random-title,
+  .lyrics,
+  .birthday-names,
+  .scripture-body,
+  .sermon-empty {
+    word-break: keep-all;
+    overflow-wrap: normal;
+  }
+  #page-title { font-size: clamp(30px, 4.2vh, 68px); line-height: 1.15; }
+  #page-sub { font-size: clamp(18px, 2.5vh, 34px); line-height: 1.3; }
+  .random-title { font-size: clamp(46px, 6vw, 100px); line-height: 1.25; }
+  .lyrics { font-size: clamp(26px, 3.6vw, 60px); line-height: 1.35; }
+  .answer { font-size: clamp(54px, 7.6vw, 124px); }
+  .finish-show { font-size: clamp(60px, 8.4vw, 148px); }
+  .birthday-names { font-size: clamp(30px, 4.6vw, 70px); }
+  .scripture-body { font-size: clamp(24px, 3.4vw, 52px); }
+  .sermon-empty { font-size: clamp(24px, 3.4vw, 46px); }
 }
