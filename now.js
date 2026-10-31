@@ -845,6 +845,7 @@ function sectionView(id) {
   return {
     title: saved && (saved.title === "center" || saved.title === "top") ? saved.title : titleDefault,
     veil: saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault,
+    veilShown: saved && typeof saved.veilShown === "boolean" ? saved.veilShown : id !== "lyrics" && id !== "guess",
     titleHide: saved && typeof saved.titleHide === "boolean" ? saved.titleHide : false
   };
 }
@@ -855,6 +856,7 @@ function setSectionView(id, patch) {
   state.doc.views[id] = {
     title: patch.title || current.title,
     veil: typeof patch.veil === "boolean" ? patch.veil : current.veil,
+    veilShown: typeof patch.veilShown === "boolean" ? patch.veilShown : current.veilShown,
     titleHide: typeof patch.titleHide === "boolean" ? patch.titleHide : current.titleHide
   };
   queueSave();
@@ -862,7 +864,7 @@ function setSectionView(id, patch) {
 
 function veilChoice(id) {
   if (Object.prototype.hasOwnProperty.call(state.veilChoice, id)) return !!state.veilChoice[id];
-  return id !== "lyrics" && id !== "guess";
+  return sectionView(id).veilShown;
 }
 
 function titleShown(id) {
@@ -1313,9 +1315,12 @@ function viewBar(pageId) {
     setSectionView(pageId, { title: "center" });
     renderDesk();
   });
-  const veil = el("input", { type: "checkbox" });
+  const veil = el("input", { type: "checkbox", class: "view-check" });
   veil.checked = view.veil;
-  veil.addEventListener("change", () => setSectionView(pageId, { veil: veil.checked }));
+  veil.addEventListener("change", () => {
+    setSectionView(pageId, { veil: veil.checked });
+    renderDesk();
+  });
   const veilLabel = el("label", { class: "view-veil" });
   veilLabel.append(veil, document.createTextNode("영상 가리기"));
   const titleHide = el("input", { type: "checkbox" });
@@ -1323,13 +1328,31 @@ function viewBar(pageId) {
   titleHide.addEventListener("change", () => setSectionView(pageId, { titleHide: titleHide.checked }));
   const titleLabel = el("label", { class: "view-veil" });
   titleLabel.append(titleHide, document.createTextNode("제목 가리기"));
-  return el("div", { class: "view-bar" }, [
+  const bar = [
     el("span", { class: "view-label", text: "제목 위치" }),
     top,
     center,
-    veilLabel,
-    titleLabel
-  ]);
+    veilLabel
+  ];
+  if (view.veil) bar.push(veilDefaultSwitch(pageId, view.veilShown));
+  bar.push(titleLabel);
+  return el("div", { class: "view-bar" }, bar);
+}
+
+function veilDefaultSwitch(pageId, shown) {
+  const button = el("button", {
+    type: "button",
+    class: "veil-switch" + (shown ? " is-on" : ""),
+    role: "switch",
+    "aria-checked": shown ? "true" : "false",
+    "aria-label": shown ? "기본 영상 보이기" : "기본 영상 가리기"
+  });
+  button.addEventListener("click", () => {
+    delete state.veilChoice[pageId];
+    setSectionView(pageId, { veilShown: !shown });
+    renderDesk();
+  });
+  return button;
 }
 
 function pageBlock(page) {
