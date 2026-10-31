@@ -2693,7 +2693,7 @@ function pageBlock(page) {
     return block;
   }
   const note = page.id === "random"
-    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 전체적용하면 끝은 시작 시간에 그 초를 더한 값이 됩니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀝니다."
+    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 입력하고 전체적용을 누르면 모든 영상의 끝 시간이 시작 시간에 그 초를 더한 값으로 바뀝니다. 적용한 뒤에는 각 영상의 끝 시간을 따로 바꿀 수 있습니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀝니다."
     : page.id === "lyrics"
       ? ""
       : "영상 제목을 검색해 넣습니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀌고, 비워 두면 처음부터 끝까지입니다.";
@@ -2701,7 +2701,7 @@ function pageBlock(page) {
   block.append(saveAllBar());
   if (page.id === "random") block.append(playSpanBar());
   const sectionId = page.id;
-  mountClips(block, () => state.doc.pages[sectionId], page.id === "lyrics", page.id === "random" ? state.doc.playSeconds : 0);
+  mountClips(block, () => state.doc.pages[sectionId], page.id === "lyrics");
   return block;
 }
 
@@ -2884,13 +2884,12 @@ function enableGradeDrag(list) {
   });
 }
 
-function mountClips(container, getItems, withLyrics, playSeconds) {
-  const span = playSeconds || 0;
+function mountClips(container, getItems, withLyrics) {
   const list = el("div", { class: "clips" + (withLyrics ? " is-lyrics" : "") });
-  getItems().forEach((item) => list.append(clipRow(item, getItems, withLyrics, span)));
+  getItems().forEach((item) => list.append(clipRow(item, getItems, withLyrics)));
   container.append(list);
   enableDrag(list, getItems);
-  const form = adder(getItems, withLyrics, span);
+  const form = adder(getItems, withLyrics);
   if (withLyrics) form.classList.add("is-lyrics");
   container.append(form);
 }
@@ -2916,6 +2915,11 @@ function playSpanBar() {
     state.doc.pages.random.forEach((clip) => {
       clip.end = clampSec((clip.start || 0) + seconds);
     });
+    document.querySelectorAll(".clip").forEach((row) => {
+      const clip = state.doc.pages.random.find((item) => item.id === row.getAttribute("data-id"));
+      const end = row.querySelectorAll("input.time")[1];
+      if (clip && end) end.value = formatTime(clip.end);
+    });
     queueSave();
     renderDesk();
   });
@@ -2933,7 +2937,7 @@ function readSeconds(text) {
   return clampSec(Number(raw));
 }
 
-function clipRow(item, getItems, withLyrics, playSeconds) {
+function clipRow(item, getItems, withLyrics) {
   const row = el("div", { class: "clip" });
   row.setAttribute("data-id", item.id);
   const liveItem = () => getItems().find((clip) => clip.id === item.id) || null;
@@ -2951,7 +2955,6 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
     const nextStart = source === "start" ? readTime(start, live.start, force) : pairedTime(start, live.start);
     let nextEnd = source === "end" ? readTime(end, live.end, force) : pairedTime(end, live.end);
     if (nextStart === false || nextEnd === false) return;
-    if (source === "start" && playSeconds) nextEnd = clampSec((nextStart || 0) + playSeconds);
     if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
       if (!force) return;
       toast("끝나는 시간은 시작보다 뒤여야 합니다.");
@@ -2963,7 +2966,7 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
     live.start = nextStart;
     live.end = nextEnd;
     if (source === "start") start.value = formatTime(live.start);
-    if (source === "end" || (source === "start" && playSeconds)) end.value = formatTime(live.end);
+    if (source === "end") end.value = formatTime(live.end);
     if (changed) queueSave();
   };
   bindLiveSave(start, (force) => applyTime("start", force), 700);
@@ -3154,7 +3157,7 @@ function readTime(input, previous, force) {
   return value;
 }
 
-function adder(getItems, withLyrics, playSeconds) {
+function adder(getItems, withLyrics) {
   const wrap = el("div", { class: "adder" });
   const input = el("input", { type: "text", placeholder: "영상 제목 검색", autocomplete: "off" });
   const matches = el("ul");
@@ -3200,7 +3203,6 @@ function adder(getItems, withLyrics, playSeconds) {
     const nextStart = readTime(start, null);
     let nextEnd = readTime(end, null);
     if (nextStart === false || nextEnd === false) return;
-    if (nextEnd == null && playSeconds) nextEnd = clampSec((nextStart || 0) + playSeconds);
     if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
       toast("끝나는 시간은 시작보다 뒤여야 합니다.");
       return;
