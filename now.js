@@ -2911,41 +2911,47 @@ function readSeconds(text) {
 function clipRow(item, getItems, withLyrics, playSeconds) {
   const row = el("div", { class: "clip" });
   row.setAttribute("data-id", item.id);
+  const liveItem = () => getItems().find((clip) => clip.id === item.id) || null;
   const handle = grip();
   const grow = videoTitleEditor(item.video);
   const start = timeInput(formatTime(item.start), "시작", "시작 시간");
   const end = timeInput(formatTime(item.end), "끝", "종료 시간");
   const applyTime = (source, force) => {
+    const live = liveItem();
+    if (!live) return;
     const startPartial = partialTime(start.value);
     const endPartial = partialTime(end.value);
     if (source === "start" && startPartial && !force) return;
     if (source === "end" && endPartial && !force) return;
-    const nextStart = source === "start" ? readTime(start, item.start, force) : pairedTime(start, item.start);
-    let nextEnd = source === "end" ? readTime(end, item.end, force) : pairedTime(end, item.end);
+    const nextStart = source === "start" ? readTime(start, live.start, force) : pairedTime(start, live.start);
+    let nextEnd = source === "end" ? readTime(end, live.end, force) : pairedTime(end, live.end);
     if (nextStart === false || nextEnd === false) return;
     if (source === "start" && playSeconds) nextEnd = clampSec((nextStart || 0) + playSeconds);
     if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
       if (!force) return;
       toast("끝나는 시간은 시작보다 뒤여야 합니다.");
-      start.value = formatTime(item.start);
-      end.value = formatTime(item.end);
+      start.value = formatTime(live.start);
+      end.value = formatTime(live.end);
       return;
     }
-    const changed = item.start !== nextStart || item.end !== nextEnd;
-    item.start = nextStart;
-    item.end = nextEnd;
-    if (source === "start") start.value = formatTime(item.start);
-    if (source === "end" || (source === "start" && playSeconds)) end.value = formatTime(item.end);
+    const changed = live.start !== nextStart || live.end !== nextEnd;
+    live.start = nextStart;
+    live.end = nextEnd;
+    if (source === "start") start.value = formatTime(live.start);
+    if (source === "end" || (source === "start" && playSeconds)) end.value = formatTime(live.end);
     if (changed) queueSave();
   };
   bindLiveSave(start, (force) => applyTime("start", force), 700);
   bindLiveSave(end, (force) => applyTime("end", force), 700);
   const watch = watchButton(
     () => findVideo(item.video),
-    () => ({
-      start: quietTime(start.value, item.start),
-      end: quietTime(end.value, item.end)
-    })
+    () => {
+      const live = liveItem();
+      return {
+        start: quietTime(start.value, live ? live.start : null),
+        end: quietTime(end.value, live ? live.end : null)
+      };
+    }
   );
   const remove = el("button", { type: "button", class: "ghost mark", text: "−", "aria-label": "삭제" });
   remove.addEventListener("click", () => {
@@ -2961,9 +2967,11 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
     const lyrics = el("textarea", { class: "lyrics-field", rows: "2", placeholder: "가사", maxlength: "4000" });
     lyrics.value = item.lyrics || "";
     bindLiveSave(lyrics, (force) => {
+      const live = liveItem();
+      if (!live) return;
       const next = lyrics.value.trim();
-      if ((item.lyrics || "") === next) return;
-      item.lyrics = next;
+      if ((live.lyrics || "") === next) return;
+      live.lyrics = next;
       if (force) lyrics.value = next;
       queueSave();
     });
