@@ -430,7 +430,7 @@ body.is-desk #desk {
 
 .login .actions { margin-top: 18px; }
 
-.login input, .line input, .adder input, .clip input, .grade-name, textarea, .video-row input {
+.login input, .line input, .adder input, .clip input, .grade-name, textarea, .video-row input, .play-span input {
   box-sizing: border-box;
   width: 100%;
   min-height: 44px;
@@ -442,7 +442,7 @@ body.is-desk #desk {
   padding: 8px 10px;
 }
 
-.line input, .adder input, .clip input, .video-row input {
+.line input, .adder input, .clip input, .video-row input, .play-span input {
   height: 36px;
   min-height: 36px;
   padding: 0 10px;
@@ -471,6 +471,8 @@ textarea { min-height: 96px; resize: vertical; }
   gap: 8px;
 }
 
+.clips:not(:empty) + .adder { margin-top: 16px; }
+
 .line input, .adder input, .video-row input { flex: 1 1 140px; width: auto; }
 .adder .time, .clip .time { flex: 0 0 88px; width: 88px; }
 .adder .time, .adder .mark { position: relative; z-index: 7; }
@@ -483,7 +485,7 @@ textarea { min-height: 96px; resize: vertical; }
 }
 
 .play-span-label { font-weight: 700; white-space: nowrap; }
-.play-span .time { flex: 0 0 72px; width: 72px; text-align: center; }
+.play-span .time { flex: 0 0 88px; width: 88px; }
 
 .desk .play-span button {
   min-height: 36px;
