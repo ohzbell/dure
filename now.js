@@ -83,6 +83,8 @@ function emptyDoc() {
       final: []
     },
     grades: [],
+    sections: [],
+    names: {},
     tabOrder: [],
     playSeconds: null,
     views: {}
@@ -158,16 +160,33 @@ function formatTime(value) {
   return minute + ":" + String(second).padStart(2, "0");
 }
 
+function basePages() {
+  const extras = (Array.isArray(state.doc.sections) ? state.doc.sections : []).map((section) => ({
+    id: section.id,
+    title: section.title
+  }));
+  return PAGES.concat(extras);
+}
+
+function pageTitle(page) {
+  const names = state.doc.names;
+  if (names && !Array.isArray(names) && typeof names[page.id] === "string" && names[page.id].trim()) {
+    return names[page.id].trim();
+  }
+  return page.title;
+}
+
 function pageOrder() {
   const saved = Array.isArray(state.doc.tabOrder) ? state.doc.tabOrder : [];
+  const pool = basePages();
   const pages = [];
-  saved.forEach((id) => {
-    const page = PAGES.find((item) => item.id === id);
-    if (page && !pages.includes(page)) pages.push(page);
-  });
-  PAGES.forEach((page) => {
-    if (!pages.includes(page)) pages.push(page);
-  });
+  const take = (id) => {
+    const page = pool.find((item) => item.id === id);
+    if (!page || pages.some((item) => item.id === page.id)) return;
+    pages.push({ id: page.id, title: pageTitle(page) });
+  };
+  saved.forEach(take);
+  pool.forEach((page) => take(page.id));
   return pages;
 }
 
@@ -284,7 +303,9 @@ function docKeyFrom(doc) {
     !!doc.cueOff,
     doc.tabOrder || [],
     doc.playSeconds || null,
-    doc.views || {}
+    doc.views || {},
+    doc.sections || [],
+    doc.names && !Array.isArray(doc.names) ? doc.names : {}
   ]);
 }
 
@@ -297,7 +318,9 @@ function snapshotDoc() {
     grades: JSON.parse(JSON.stringify(state.doc.grades)),
     tabOrder: (state.doc.tabOrder || []).slice(),
     playSeconds: state.doc.playSeconds || null,
-    views: JSON.parse(JSON.stringify(state.doc.views || {}))
+    views: JSON.parse(JSON.stringify(state.doc.views && !Array.isArray(state.doc.views) ? state.doc.views : {})),
+    sections: JSON.parse(JSON.stringify(state.doc.sections || [])),
+    names: JSON.parse(JSON.stringify(state.doc.names && !Array.isArray(state.doc.names) ? state.doc.names : {}))
   };
 }
 
@@ -308,7 +331,7 @@ function localDirty() {
 
 function applyDoc(doc, force) {
   if (!force && localDirty()) return;
-  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds, doc.views]);
+  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds, doc.views, doc.sections, doc.names]);
   const changed = key !== docKey;
   docKey = key;
   if (!changed) {
@@ -318,6 +341,11 @@ function applyDoc(doc, force) {
   const keepId = pageOrder()[state.page] ? pageOrder()[state.page].id : "";
   const previous = currentClip();
   state.doc = doc;
+  if (!Array.isArray(state.doc.sections)) state.doc.sections = [];
+  if (!state.doc.names || Array.isArray(state.doc.names)) state.doc.names = {};
+  state.doc.sections.forEach((section) => {
+    if (!Array.isArray(state.doc.pages[section.id])) state.doc.pages[section.id] = [];
+  });
   ackedKey = docKeyFrom(state.doc);
   const kept = pageOrder().findIndex((page) => page.id === keepId);
   if (kept >= 0) state.page = kept;
@@ -1116,7 +1144,7 @@ function deskSection(id) {
   if (id === "videos") return videoBlock();
   if (id === "cue") return cueBlock();
   if (id === "accounts") return accountBlock();
-  return pageBlock(PAGES.find((page) => page.id === id));
+  return pageBlock(pageOrder().find((page) => page.id === id));
 }
 
 function loginCard() {
@@ -1155,9 +1183,13 @@ function editorCard() {
     if (!tab.fixed) row.append(grip());
     button.title = tab.title;
     row.append(button);
+    if (!tab.fixed) row.append(renameButton(tab));
     (tab.fixed ? nav : movable).append(row);
   });
   nav.append(movable);
+  const add = el("button", { type: "button", class: "desk-add", text: "섹션 추가" });
+  add.addEventListener("click", addSection);
+  nav.append(add);
   const foot = el("div", { class: "desk-nav-foot" }, [
     el("a", { class: "text-link", href: "now.html", target: "_blank", rel: "noopener", text: "진행 화면" }),
     el("button", { type: "button", class: "ghost", id: "logout", text: "로그아웃" })
@@ -1502,7 +1534,107 @@ function veilDefaultSwitch(pageId, shown) {
   return button;
 }
 
+function pencilIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5zM16.6 3.8l3.5 3.5");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "2");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.append(path);
+  return svg;
+}
+
+function renameButton(page) {
+  const button = el("button", { type: "button", class: "desk-rename", "aria-label": "섹션 이름 수정" });
+  button.append(pencilIcon());
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openNameModal(page);
+  });
+  return button;
+}
+
+function nextPlaylistTitle() {
+  const used = new Set(pageOrder().map((page) => page.title));
+  if (!used.has("플레이리스트")) return "플레이리스트";
+  let number = 2;
+  while (used.has("플레이리스트 " + number)) number += 1;
+  return "플레이리스트 " + number;
+}
+
+function addSection() {
+  const title = nextPlaylistTitle();
+  const id = uid();
+  if (!Array.isArray(state.doc.sections)) state.doc.sections = [];
+  if (!state.doc.pages || Array.isArray(state.doc.pages)) state.doc.pages = {};
+  if (!state.doc.names || Array.isArray(state.doc.names)) state.doc.names = {};
+  const order = pageOrder().map((page) => page.id);
+  state.doc.sections.push({ id: id, title: title });
+  state.doc.pages[id] = [];
+  state.doc.names[id] = title;
+  state.doc.tabOrder = order.concat(id);
+  state.deskTab = id;
+  document.body.classList.remove("desk-open");
+  queueSave();
+  renderDesk();
+}
+
+function openNameModal(page) {
+  const input = el("input", { value: page.title, maxlength: "80", "aria-label": "섹션 이름" });
+  const cancel = el("button", { type: "button", class: "ghost", text: "취소" });
+  const save = el("button", { type: "button", class: "ghost", text: "저장" });
+  const scrim = el("button", { type: "button", class: "watch-scrim", "aria-label": "닫기" });
+  const card = el("div", { class: "watch-card" }, [
+    el("div", { class: "watch-head" }, [el("strong", { text: "섹션 이름" })]),
+    input,
+    el("div", { class: "actions" }, [cancel, save])
+  ]);
+  const overlay = el("div", { class: "watch name-pop" }, [scrim, card]);
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    overlay.remove();
+    document.body.classList.remove("watch-open");
+  };
+  const commit = () => {
+    if (closed) return;
+    const title = input.value.trim();
+    if (!title) {
+      toast("섹션 이름을 입력해 주세요.");
+      input.focus();
+      return;
+    }
+    if (!state.doc.names || Array.isArray(state.doc.names)) state.doc.names = {};
+    state.doc.names[page.id] = title;
+    const section = (state.doc.sections || []).find((item) => item.id === page.id);
+    if (section) section.title = title;
+    queueSave();
+    close();
+    renderDesk();
+  };
+  scrim.addEventListener("click", close);
+  cancel.addEventListener("click", close);
+  save.addEventListener("click", commit);
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") close();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    }
+  });
+  document.body.classList.add("watch-open");
+  document.body.append(overlay);
+  input.focus();
+  input.select();
+}
+
 function pageBlock(page) {
+  if (!page) return el("section", { class: "desk-block" });
   const block = el("section", { class: "desk-block" }, [
     el("h2", { text: page.title }),
     viewBar(page.id)
@@ -2385,6 +2517,12 @@ async function boot() {
   try {
     await loadStore();
     applyDoc(await request("GET"));
+    const opened = pageOrder().findIndex((page) => page.id === hash);
+    if (opened >= 0 && opened !== state.page) {
+      state.page = opened;
+      state.clip = 0;
+      if (!state.desk) paint();
+    }
   } catch (error) {
     if (state.desk) renderDesk();
     else paint();
