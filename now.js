@@ -2157,8 +2157,8 @@ async function uploadCue(file) {
 function viewBar(pageId) {
   const view = sectionView(pageId);
   const lockTop = pageId === "lyrics";
-  const top = el("button", { type: "button", class: "ghost" + (view.title === "top" ? " is-on" : ""), text: "상단" });
-  const center = el("button", { type: "button", class: "ghost" + (!lockTop && view.title === "center" ? " is-on" : ""), text: "가운데" });
+  const top = el("button", { type: "button", class: "ghost view-pos" + (view.title === "top" ? " is-on" : ""), text: "상단" });
+  const center = el("button", { type: "button", class: "ghost view-pos" + (!lockTop && view.title === "center" ? " is-on" : ""), text: "가운데" });
   top.addEventListener("click", () => {
     setSectionView(pageId, { title: "top" });
     renderDesk();
@@ -2168,24 +2168,25 @@ function viewBar(pageId) {
     setSectionView(pageId, { title: "center" });
     renderDesk();
   });
-  const veil = el("input", { type: "checkbox", class: "view-check", "aria-label": "영상 가리기" });
-  veil.checked = view.veil;
+  const videoShown = !view.veil || view.veilShown;
+  const veil = el("input", { type: "checkbox", class: "view-check", "aria-label": "영상 보이기" });
+  veil.checked = videoShown;
   veil.addEventListener("change", () => {
-    setSectionView(pageId, { veil: veil.checked });
+    setSectionView(pageId, veil.checked ? { veilShown: true } : { veil: true, veilShown: false });
     renderDesk();
   });
-  const titleHide = el("input", { type: "checkbox", class: "view-check", "aria-label": "제목 가리기" });
-  titleHide.checked = view.titleHide;
-  titleHide.addEventListener("change", () => setSectionView(pageId, { titleHide: titleHide.checked }));
+  const titleShow = el("input", { type: "checkbox", class: "view-check", "aria-label": "제목 보이기" });
+  titleShow.checked = !view.titleHide;
+  titleShow.addEventListener("change", () => setSectionView(pageId, { titleHide: !titleShow.checked }));
   const video = [
-    el("span", { class: "view-label", text: "영상" }),
+    el("span", { class: "view-label", text: "영상보이기" }),
     veil
   ];
   if (view.veil) video.push(veilDefaultSwitch(pageId, view.veilShown));
   return el("div", { class: "view-bar" }, [
     el("div", { class: "view-group" }, [
-      el("span", { class: "view-label", text: "영상제목" }),
-      titleHide,
+      el("span", { class: "view-label", text: "제목보이기" }),
+      titleShow,
       top,
       center
     ]),

@@ -842,8 +842,8 @@ body.is-birthday #playlist { display: none !important; }
 .view-label { font-weight: 700; white-space: nowrap; }
 
 .view-group .view-check {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   margin: 0;
   accent-color: #fff;
 }
@@ -881,10 +881,12 @@ body.is-birthday #playlist { display: none !important; }
   background: #111;
 }
 
-.desk .view-bar button {
-  min-height: 36px;
-  height: 36px;
-  padding: 0 14px;
+.desk .view-bar button.view-pos {
+  min-height: 26px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14px;
 }
 
 .desk .view-bar button.is-on {
