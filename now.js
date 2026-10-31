@@ -34,6 +34,8 @@ const state = {
   lyricsShown: false,
   veilChoice: {},
   titleChoice: {},
+  volume: 100,
+  muted: false,
   listOpen: false,
   sectionsOpen: false,
   counting: false,
@@ -638,14 +640,22 @@ function hush(item) {
 }
 
 function outputVolume() {
-  return pageId() === "guess" && state.revealed ? 30 : 100;
+  if (state.muted || state.volume <= 0) return 0;
+  const level = Math.max(0, Math.min(100, Math.round(state.volume)));
+  if (pageId() === "guess" && state.revealed) return Math.round(level * 0.3);
+  return level;
 }
 
 function speak(item) {
   try {
     if (!item) return;
+    const level = outputVolume();
+    if (level <= 0) {
+      item.mute();
+      return;
+    }
     item.unMute();
-    item.setVolume(outputVolume());
+    item.setVolume(level);
   } catch (error) { /* not ready */ }
 }
 
@@ -3564,10 +3574,42 @@ function pausePlay() {
   try { if (player) player.pauseVideo(); } catch (error) { /* ignore */ }
 }
 
+function paintVolume() {
+  const range = document.getElementById("vol-range");
+  const button = document.getElementById("vol-toggle");
+  if (!range || !button) return;
+  const level = Math.max(0, Math.min(100, Math.round(state.volume)));
+  const muted = state.muted || level <= 0;
+  range.value = String(level);
+  range.setAttribute("aria-valuenow", String(level));
+  button.classList.toggle("is-muted", muted);
+  button.setAttribute("aria-pressed", muted ? "true" : "false");
+  button.setAttribute("aria-label", muted ? "소리" : "음소거");
+}
+
+function toggleMute() {
+  const muted = state.muted || state.volume <= 0;
+  if (muted) {
+    state.muted = false;
+    if (state.volume <= 0) state.volume = 100;
+  } else state.muted = true;
+  applyVolume();
+  paintVolume();
+}
+
 function bindShow() {
   document.getElementById("page-prev").addEventListener("click", () => setPage(state.page - 1));
   document.getElementById("page-next").addEventListener("click", goNextPage);
   document.getElementById("play").addEventListener("click", resumePlay);
+  document.getElementById("vol-toggle").addEventListener("click", toggleMute);
+  const volume = document.getElementById("vol-range");
+  volume.addEventListener("input", () => {
+    state.volume = Number(volume.value);
+    state.muted = state.volume <= 0;
+    applyVolume();
+    paintVolume();
+  });
+  paintVolume();
   document.getElementById("play-tip").addEventListener("click", resumePlay);
   document.getElementById("pause").addEventListener("click", pausePlay);
   document.getElementById("next-track").addEventListener("click", nextTrack);

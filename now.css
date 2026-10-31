@@ -166,13 +166,73 @@ body.is-open #veil { display: none; }
   gap: 10px;
 }
 
+#show { --ctrl: 72px; --vol-gap: 12px; --vol-slider: 148px; --vol-pad: 8px; }
 .transport { left: 18px; }
 .side-tools { right: 18px; }
+
+.vol {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + var(--vol-gap));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--vol-pad);
+  width: var(--ctrl);
+}
+
+.vol-range {
+  width: 28px;
+  height: var(--vol-slider);
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  appearance: slider-vertical;
+}
+
+.vol-range::-webkit-slider-runnable-track,
+.vol-range::-webkit-slider-container {
+  background: rgba(200, 200, 200, 0.28);
+  border-radius: 999px;
+}
+
+.vol-range::-webkit-slider-thumb {
+  background: #c8c8c8;
+  border: 0;
+  border-radius: 50%;
+  cursor: grab;
+}
+
+.vol-range::-moz-range-track {
+  width: 8px;
+  background: rgba(200, 200, 200, 0.28);
+  border: 0;
+  border-radius: 999px;
+}
+
+.vol-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: #c8c8c8;
+  cursor: grab;
+}
+
+.vol-toggle .vol-body { fill: currentColor; stroke: none; }
+.vol-toggle .vol-slash { display: none; }
+.vol-toggle.is-muted .vol-wave { display: none; }
+.vol-toggle.is-muted .vol-slash { display: block; }
 
 .play-tip {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 14px);
+  bottom: calc(100% + var(--vol-gap) + var(--vol-slider) + var(--vol-pad) + var(--ctrl) + 10px);
   z-index: 2;
   margin: 0;
   padding: 8px 14px;
@@ -1503,14 +1563,16 @@ body.watch-open { overflow: hidden; }
   .icon-btn { width: 44px; height: 44px; }
   .icon-btn svg { width: 20px; height: 20px; }
   .transport, .side-tools { bottom: 10px; gap: 6px; }
+  #show { --ctrl: 44px; --vol-gap: 8px; --vol-slider: 108px; --vol-pad: 6px; }
   .transport { left: 8px; }
+  .vol-range { width: 22px; }
   .play-tip { font-size: 13px; padding: 7px 10px; }
   .play-tip::after { left: 22px; }
   .side-tools { right: 8px; }
   .seek {
     left: 10px;
     right: 10px;
-    bottom: 62px;
+    bottom: calc(10px + var(--ctrl) + var(--vol-gap) + var(--vol-slider) + var(--vol-pad) + var(--ctrl) + 10px);
     height: 34px;
     gap: 8px;
   }
