@@ -361,6 +361,7 @@ body.is-open #veil { display: none; }
   transform: translate(-50%, -50%);
   margin: 0;
   text-align: center;
+  color: #ffe08a;
   font-size: clamp(56px, 7vw, 120px);
   font-weight: 700;
   line-height: 1.15;
