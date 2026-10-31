@@ -495,7 +495,7 @@ body.is-desk #desk {
   margin: 0 0 6px;
 }
 
-.desk-tab-row.is-fixed { padding-left: 40px; }
+.desk-tab-row.is-fixed { padding-left: 0; }
 
 .desk .desk-nav .desk-tab {
   display: flex;
@@ -522,6 +522,18 @@ body.is-desk #desk {
 }
 
 .desk .desk-nav .desk-tab.is-on { background: #fff; color: #000; }
+
+.desk .desk-nav .desk-tab.is-tool {
+  padding-left: 0;
+  font-weight: 500;
+  color: #bdbdbd;
+}
+
+.desk .desk-nav .desk-tab.is-tool.is-on {
+  background: transparent;
+  color: #fff;
+  font-weight: 700;
+}
 
 .desk-tab-row .handle { flex: 0 0 32px; }
 
@@ -552,13 +564,21 @@ body.is-desk #desk {
 }
 
 .desk .desk-move {
-  flex: 0 0 auto;
-  height: 28px;
-  min-height: 28px;
-  padding: 0 6px;
-  border-radius: 8px;
-  font-size: 11px;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
 }
+
+.desk .desk-move.is-use { color: #3ddc84; }
+.desk .desk-move.is-idle { color: #8d8d8d; }
 
 .zone-label {
   margin: 14px 0 6px;

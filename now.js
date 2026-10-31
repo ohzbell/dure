@@ -1877,8 +1877,9 @@ function sectionRow(tab, active) {
   });
   const move = el("button", {
     type: "button",
-    class: "desk-move",
-    text: active ? "미사용" : "사용",
+    class: "desk-move " + (active ? "is-idle" : "is-use"),
+    text: "O",
+    title: active ? "미사용으로 이동" : "사용으로 이동",
     "aria-label": active ? "미사용으로 이동" : "사용으로 이동"
   });
   move.addEventListener("click", (event) => {
@@ -1896,7 +1897,7 @@ function sectionRow(tab, active) {
 function toolRow(tab) {
   const button = el("button", {
     type: "button",
-    class: "desk-tab" + (tab.id === state.deskTab ? " is-on" : ""),
+    class: "desk-tab is-tool" + (tab.id === state.deskTab ? " is-on" : ""),
     text: tab.title
   });
   button.title = tab.title;
