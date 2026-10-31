@@ -2338,7 +2338,7 @@ async function uploadCue(file) {
 function viewSwitch(on, label, onClick) {
   const button = el("button", {
     type: "button",
-    class: "veil-switch" + (on ? " is-on" : ""),
+    class: "view-dot" + (on ? " is-on" : " is-off"),
     role: "switch",
     "aria-checked": on ? "true" : "false",
     "aria-label": label
