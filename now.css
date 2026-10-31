@@ -528,6 +528,214 @@ body.is-desk #desk {
   display: block;
 }
 
+.desk .desk-move {
+  flex: 0 0 auto;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.zone-label {
+  margin: 14px 0 6px;
+  color: #9a9a9a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.zone-label:first-child { margin-top: 0; }
+
+.zone-empty {
+  margin: 0 0 8px;
+  color: #777;
+  font-size: 13px;
+}
+
+.desk-tools {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #333;
+}
+
+.wide-input, .month-row input:not([type="radio"]) {
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  border: 2px solid #444;
+  border-radius: 12px;
+  background: #111;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  padding: 8px 10px;
+}
+
+.month-row, .scripture-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.month-row input[type="radio"], .scripture-row input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #fff;
+}
+
+.month-label, .round-no { font-weight: 700; white-space: nowrap; }
+.month-row input:not([type="radio"]) { flex: 1; min-width: 0; }
+.round-no { flex: 1; min-width: 0; }
+
+.desk .scripture-row button, .desk .pager button, .desk .rich-btn, .desk .scripture-card button {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.rich-field { margin-top: 16px; }
+.rich-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.rich-bar input[type="color"] { width: 36px; height: 32px; padding: 0; border: 0; background: transparent; }
+
+.rich-area, .rich-read {
+  box-sizing: border-box;
+  min-height: 120px;
+  padding: 10px 12px;
+  border: 2px solid #444;
+  border-radius: 12px;
+  background: #0c0c0c;
+  color: #fff;
+  line-height: 1.45;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.rich-area:focus { outline: 2px solid #fff; }
+.rich-area ul, .rich-read ul, .scripture-body ul { margin: 0.3em 0; padding-left: 1.2em; }
+.rich-read { min-height: 0; margin-bottom: 12px; }
+.scripture-card { margin: 12px 0; padding: 12px; border: 1px solid #333; border-radius: 12px; }
+.scripture-card-head, .scripture-form .actions, .pager { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.scripture-card-head strong { flex: 1; }
+.scripture-form { margin-top: 8px; }
+.pager { margin-top: 12px; }
+.desk .pager button.is-on { background: #fff; color: #000; }
+
+#canva {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+}
+
+#canva[hidden], body.is-desk #canva { display: none !important; }
+
+body.is-sermon #page-title,
+body.is-sermon #page-sub,
+body.is-sermon .transport,
+body.is-sermon .seek,
+body.is-sermon .side-tools,
+body.is-sermon #playlist,
+body.is-sermon .play-tip,
+body.is-scripture .transport,
+body.is-scripture .seek,
+body.is-scripture #list-toggle,
+body.is-scripture #playlist,
+body.is-scripture .play-tip,
+body.is-birthday #list-toggle,
+body.is-birthday #playlist { display: none !important; }
+
+.sermon-empty {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  color: #fff;
+  font-size: clamp(28px, 4vw, 56px);
+  font-weight: 700;
+  text-align: center;
+}
+
+.birthday-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.birthday-names {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: min(84vw, 1000px);
+  transform: translate(-50%, -50%);
+  margin: 0;
+  color: #fff;
+  font-size: clamp(36px, 5.5vw, 84px);
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  word-break: keep-all;
+  text-shadow: 0 4px 24px #000;
+  pointer-events: none;
+}
+
+.scripture-body {
+  position: fixed;
+  left: 50%;
+  top: 46%;
+  z-index: 4;
+  width: min(86vw, 1100px);
+  max-height: 62vh;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: clamp(28px, 4vw, 64px);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  text-shadow: 0 4px 24px #000;
+}
+
+.scripture-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  width: min(720px, calc(100% - 120px));
+  transform: translateX(-50%);
+}
+
+.scripture-bar button {
+  min-width: 108px;
+  min-height: 56px;
+  border: 2px solid #fff;
+  border-radius: 16px;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.scripture-bar button.is-on { background: #fff; color: #000; }
+
 .desk .desk-add {
   width: 100%;
   height: 32px;
