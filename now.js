@@ -1185,7 +1185,9 @@ function paintStage() {
   }
   if (id === "birthday") {
     stage.append(el("div", { class: "birthday-dim" }));
-    stage.append(el("p", { class: "birthday-names", text: birthdayNames() }));
+    const names = el("p", { class: "birthday-names", text: birthdayNames() });
+    stage.append(names);
+    fitBirthdayNames(names);
     return;
   }
   if (id === "scripture") {
@@ -1438,6 +1440,20 @@ function birthdayNames() {
   return birthday.names[birthday.month - 1] || "";
 }
 
+function fitBirthdayNames(node) {
+  if (!node) return;
+  node.style.fontSize = "";
+  const limit = Math.max(160, window.innerHeight - 230);
+  let size = parseFloat(getComputedStyle(node).fontSize);
+  const min = 16;
+  let guard = 0;
+  while (node.getBoundingClientRect().height > limit && size > min && guard < 18) {
+    size = Math.max(min, Math.floor(size * 0.9));
+    node.style.fontSize = size + "px";
+    guard += 1;
+  }
+}
+
 function sermonUrl() {
   return (state.doc.sermon && state.doc.sermon.url) || "";
 }
@@ -1474,14 +1490,27 @@ function canvaFrameUrl(url) {
 function paintCanva() {
   const frame = document.getElementById("canva");
   if (!frame) return;
+  if (!frame.dataset.fade) {
+    frame.dataset.fade = "1";
+    frame.addEventListener("load", () => {
+      const src = frame.getAttribute("src") || "";
+      window.setTimeout(() => {
+        if (src && frame.getAttribute("src") === src) frame.classList.add("is-in");
+      }, 450);
+    });
+  }
   const show = !state.desk && pageId() === "sermon";
   const url = show ? canvaFrameUrl(sermonUrl()) : "";
   if (!url) {
+    frame.classList.remove("is-in");
     frame.hidden = true;
     if (frame.getAttribute("src")) frame.removeAttribute("src");
     return;
   }
-  if (frame.getAttribute("src") !== url) frame.src = url;
+  if (frame.getAttribute("src") !== url) {
+    frame.classList.remove("is-in");
+    frame.src = url;
+  }
   frame.hidden = false;
 }
 
@@ -3345,6 +3374,7 @@ function bindShow() {
     seekRatio(Number(range.value) / 1000);
   });
   seekTimer = window.setInterval(paintSeek, 250);
+  window.addEventListener("resize", () => fitBirthdayNames(document.querySelector(".birthday-names")));
   document.getElementById("list-toggle").addEventListener("click", toggleList);
   document.getElementById("section-toggle").addEventListener("click", toggleSections);
   document.addEventListener("pointerdown", (event) => {
