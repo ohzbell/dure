@@ -88,6 +88,9 @@ body.is-open #veil { display: none; }
 
 #page-sub:empty { display: none; margin: 0; }
 
+.grade-line,
+.song-line { display: block; }
+
 .nav, .icon-btn, .overlay-btn {
   box-sizing: border-box;
   border: 2px solid #c8c8c8;

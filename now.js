@@ -934,8 +934,20 @@ function subtitle() {
   if (!clip || state.counting || !titleShown(id) || sectionView(id).title !== "top") return "";
   if (id === "random" && state.randomPhase !== "play") return "";
   if ((id === "guess" || id === "lyrics") && !(id === "guess" ? state.revealed : state.lyricsShown)) return "";
-  if (clip.gradeName) return clip.gradeName + " · " + clip.title;
   return clip.title;
+}
+
+function paintSongTitle(node, clip) {
+  node.replaceChildren();
+  if (!clip) return;
+  if (clip.gradeName) {
+    node.append(
+      el("span", { class: "grade-line", text: clip.gradeName }),
+      el("span", { class: "song-line", text: clip.title })
+    );
+    return;
+  }
+  node.textContent = clip.title;
 }
 
 function stageKey() {
@@ -960,7 +972,9 @@ function stageKey() {
 function paint() {
   const page = pageOrder()[state.page];
   document.getElementById("page-title").textContent = page.title;
-  document.getElementById("page-sub").textContent = subtitle();
+  const sub = document.getElementById("page-sub");
+  if (!subtitle()) sub.replaceChildren();
+  else paintSongTitle(sub, currentClip());
   paintNav();
   if (!state.desk) document.title = page.title;
   syncVeil();
@@ -1037,8 +1051,9 @@ function appendCenterTitle(stage, clip) {
   if (id === "random" && state.randomPhase !== "play") return;
   if (id === "guess" && !state.revealed) return;
   if (id === "lyrics" && !state.lyricsShown) return;
-  const text = clip.gradeName ? clip.gradeName + " · " + clip.title : clip.title;
-  stage.append(el("p", { class: "random-title", text: text }));
+  const title = el("p", { class: "random-title" });
+  paintSongTitle(title, clip);
+  stage.append(title);
 }
 
 function appendShowToggles(stage) {
