@@ -36,6 +36,10 @@ const state = {
   dragging: false,
   saving: false,
   admin: false,
+  adminId: "",
+  accounts: [],
+  accountsLoaded: false,
+  accountEdit: "",
   deskTab: "videos",
   doc: emptyDoc(),
   endpoint: "",
@@ -255,9 +259,20 @@ async function request(method, body) {
     options.body = JSON.stringify(body);
   }
   const response = await fetch(state.endpoint, options);
-  if (!response.ok) throw new Error("http");
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const failed = await response.json();
+      detail = failed && failed.message ? String(failed.message) : "";
+    } catch (error) { /* ignore */ }
+    const failure = new Error("http");
+    failure.detail = detail;
+    throw failure;
+  }
   const doc = await response.json();
-  if (!doc || doc.ok !== true || !Array.isArray(doc.videos) || !doc.pages) throw new Error("shape");
+  if (!doc || doc.ok !== true) throw new Error("shape");
+  if (body && (body.op === "login" || body.op === "session" || body.op === "accounts")) return doc;
+  if (!Array.isArray(doc.videos) || !doc.pages) throw new Error("shape");
   return doc;
 }
 
@@ -1090,12 +1105,17 @@ function renderDesk() {
 }
 
 function deskTabs() {
-  return [{ id: "videos", title: "유튜브 영상", fixed: true }, { id: "cue", title: "사이 음향", fixed: true }].concat(pageOrder());
+  return [
+    { id: "videos", title: "유튜브 영상", fixed: true },
+    { id: "cue", title: "사이 음향", fixed: true },
+    { id: "accounts", title: "계정 관리", fixed: true }
+  ].concat(pageOrder());
 }
 
 function deskSection(id) {
   if (id === "videos") return videoBlock();
   if (id === "cue") return cueBlock();
+  if (id === "accounts") return accountBlock();
   return pageBlock(PAGES.find((page) => page.id === id));
 }
 
@@ -1279,6 +1299,132 @@ function cueBlock() {
   block.append(el("label", { class: "field", text: "영상 사이에 음향 사용" }, [use]));
   block.append(file, el("div", { class: "actions" }, [pick, preview, clear]));
   return block;
+}
+
+function accountBlock() {
+  const block = el("section", { class: "desk-block" }, [
+    el("h2", { text: "계정 관리" }),
+    el("p", { class: "desk-note", text: "아이디와 비밀번호로 관리자 화면을 엽니다." })
+  ]);
+  if (!state.accountsLoaded) {
+    block.append(el("p", { class: "desk-note", text: "계정을 불러오는 중입니다." }));
+    loadAccounts();
+    return block;
+  }
+  state.accounts.forEach((id) => {
+    if (state.accountEdit === id) block.append(accountEditRow(id));
+    else block.append(accountRow(id));
+  });
+  block.append(accountAddRow());
+  return block;
+}
+
+function accountRow(id) {
+  const edit = el("button", { type: "button", class: "ghost", text: "수정" });
+  edit.addEventListener("click", () => {
+    state.accountEdit = id;
+    renderDesk();
+  });
+  const remove = el("button", { type: "button", class: "ghost", text: "삭제" });
+  remove.addEventListener("click", () => removeAccount(id));
+  return el("div", { class: "account-row" }, [
+    el("strong", { text: id }),
+    edit,
+    remove
+  ]);
+}
+
+function accountEditRow(id) {
+  const name = el("input", { value: id, maxlength: "40", "aria-label": "아이디", autocomplete: "off" });
+  const password = el("input", { type: "password", maxlength: "200", placeholder: "비밀번호 변경", "aria-label": "비밀번호", autocomplete: "new-password" });
+  const save = el("button", { type: "button", class: "ghost", text: "저장" });
+  save.addEventListener("click", () => saveAccount(id, name.value, password.value));
+  const cancel = el("button", { type: "button", class: "ghost", text: "취소" });
+  cancel.addEventListener("click", () => {
+    state.accountEdit = "";
+    renderDesk();
+  });
+  return el("div", { class: "account-row" }, [name, password, save, cancel]);
+}
+
+function accountAddRow() {
+  const name = el("input", { maxlength: "40", placeholder: "아이디", "aria-label": "새 아이디", autocomplete: "off" });
+  const password = el("input", { type: "password", maxlength: "200", placeholder: "비밀번호", "aria-label": "새 비밀번호", autocomplete: "new-password" });
+  const add = el("button", { type: "button", class: "ghost mark", text: "+", "aria-label": "계정 추가" });
+  add.addEventListener("click", () => addAccount(name.value, password.value));
+  return el("div", { class: "account-add" }, [name, password, add]);
+}
+
+async function loadAccounts() {
+  try {
+    const doc = await accountRequest("list");
+    state.accounts = doc.accounts || [];
+    state.accountsLoaded = true;
+    if (state.desk && state.deskTab === "accounts") renderDesk();
+  } catch (error) {
+    toast(error.detail || "계정을 불러오지 못했습니다.");
+  }
+}
+
+async function addAccount(id, password) {
+  const name = id.trim();
+  if (!name || !password) {
+    toast("아이디와 비밀번호를 입력해 주세요.");
+    return;
+  }
+  try {
+    const doc = await accountRequest("add", { id: name, password: password });
+    state.accounts = doc.accounts || [];
+    state.accountEdit = "";
+    renderDesk();
+  } catch (error) {
+    toast(error.detail || "계정을 추가하지 못했습니다.");
+  }
+}
+
+async function saveAccount(id, nextId, password) {
+  const name = nextId.trim();
+  if (!name) {
+    toast("아이디를 입력해 주세요.");
+    return;
+  }
+  try {
+    const doc = await accountRequest("update", { id: id, nextId: name, password: password });
+    state.accounts = doc.accounts || [];
+    state.accountEdit = "";
+    renderDesk();
+  } catch (error) {
+    toast(error.detail || "계정을 수정하지 못했습니다.");
+  }
+}
+
+async function removeAccount(id) {
+  try {
+    const doc = await accountRequest("delete", { id: id });
+    if (!state.admin) return;
+    state.accounts = doc.accounts || [];
+    if (state.accountEdit === id) state.accountEdit = "";
+    renderDesk();
+  } catch (error) {
+    toast(error.detail || "계정을 지우지 못했습니다.");
+  }
+}
+
+async function accountRequest(action, extra) {
+  const session = readJson(SESSION_KEY);
+  const doc = await request("POST", Object.assign({ op: "accounts", action: action, session: session }, extra || {}));
+  if (doc.admin) {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(doc.admin));
+    state.adminId = doc.admin.id;
+  }
+  if (doc.signedOut) {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (error) { /* ignore */ }
+    state.admin = false;
+    state.adminId = "";
+    state.accountsLoaded = false;
+    renderDesk();
+  }
+  return doc;
 }
 
 async function uploadCue(file) {
@@ -1995,16 +2141,18 @@ function readJson(key) {
 
 async function readSession() {
   const data = readJson(SESSION_KEY);
-  if (!data || data.id !== ADMIN_ID || typeof data.exp !== "number" || data.exp < Date.now() || typeof data.token !== "string") {
+  if (!data || typeof data.id !== "string" || typeof data.exp !== "number" || data.exp < Date.now() || typeof data.token !== "string") {
     try { sessionStorage.removeItem(SESSION_KEY); } catch (error) { /* ignore */ }
     return false;
   }
-  const expected = await sha256(data.id + "|" + data.exp + "|" + ADMIN_PASSWORD_SHA256);
-  if (!safeEqual(expected, data.token)) {
-    sessionStorage.removeItem(SESSION_KEY);
+  try {
+    await request("POST", { op: "session", session: { id: data.id, exp: data.exp, token: data.token } });
+    state.adminId = data.id;
+    return true;
+  } catch (error) {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (ignore) { /* ignore */ }
     return false;
   }
-  return true;
 }
 
 async function issueSession() {
@@ -2047,18 +2195,21 @@ async function submitLogin(event) {
   const password = document.getElementById("login-password").value;
   loginBusy = true;
   try {
-    const hash = await sha256(password);
-    if (!(id === ADMIN_ID && safeEqual(hash, ADMIN_PASSWORD_SHA256))) {
-      registerLoginFailure();
-      document.getElementById("login-password").value = "";
-      toast("아이디 또는 비밀번호를 다시 확인해 주세요.");
-      return;
-    }
+    const doc = await request("POST", { op: "login", id: id, password: password });
+    if (!doc.admin) throw new Error("shape");
     try { sessionStorage.removeItem(LOGIN_LOCK_KEY); } catch (error) { /* ignore */ }
-    await issueSession();
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(doc.admin));
+    state.adminId = doc.admin.id;
+    state.accountsLoaded = false;
     state.admin = true;
     renderDesk();
   } catch (error) {
+    if (error.detail) {
+      registerLoginFailure();
+      document.getElementById("login-password").value = "";
+      toast(error.detail);
+      return;
+    }
     toast("이 페이지는 https 또는 localhost에서 열어 주세요.");
   } finally {
     loginBusy = false;
@@ -2189,6 +2340,15 @@ function bindShow() {
   });
   seekTimer = window.setInterval(paintSeek, 250);
   document.getElementById("list-toggle").addEventListener("click", toggleList);
+  document.addEventListener("pointerdown", (event) => {
+    if (!state.listOpen || state.desk) return;
+    const box = document.getElementById("playlist");
+    const toggle = document.getElementById("list-toggle");
+    if ((box && box.contains(event.target)) || (toggle && toggle.contains(event.target))) return;
+    state.listOpen = false;
+    if (box) box.hidden = true;
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+  });
   document.addEventListener("keydown", (event) => {
     if (state.desk) return;
     const tag = event.target && event.target.tagName;
