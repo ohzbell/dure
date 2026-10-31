@@ -401,13 +401,18 @@ function localDirty() {
   return docKeyFrom(snapshotDoc()) !== ackedKey;
 }
 
-function applyDoc(doc, force) {
+function clipMediaChanged(previous, next) {
+  if (!previous || !next) return true;
+  return next.clipId !== previous.clipId || next.url !== previous.url || next.start !== previous.start || next.end !== previous.end;
+}
+
+function applyDoc(doc, force, holdClip) {
   if (!force && localDirty()) return;
   const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds, doc.views, doc.sections, doc.names, doc.active, doc.inactive, doc.sermon, doc.birthday, doc.scripture]);
   const changed = key !== docKey;
   docKey = key;
   if (!changed) {
-    ackedKey = docKeyFrom(state.doc);
+    ackedKey = docKeyFrom(snapshotDoc());
     return;
   }
   const keepId = pageOrder()[state.page] ? pageOrder()[state.page].id : "";
@@ -419,18 +424,47 @@ function applyDoc(doc, force) {
     if (!Array.isArray(state.doc.pages[section.id])) state.doc.pages[section.id] = [];
   });
   normalizeFeatures();
-  ackedKey = docKeyFrom(state.doc);
+  ackedKey = docKeyFrom(snapshotDoc());
   const kept = pageOrder().findIndex((page) => page.id === keepId);
   if (kept >= 0) state.page = kept;
-  else state.page = 0;
+  else {
+    state.page = 0;
+    state.clip = 0;
+    state.revealed = false;
+    state.lyricsShown = false;
+    state.finished = false;
+    state.verse = "blank";
+    if (pageId() === "random") state.randomPhase = "start";
+    stopVideo();
+  }
   const clips = clipsForPage();
-  if (previous) {
-    const index = clips.findIndex((clip) => clip.clipId === previous.clipId);
-    if (index >= 0) state.clip = index;
-    else {
+  if (kept < 0) {
+    /* the section is gone, so the landing flags above already reset playback */
+  } else if (holdClip) {
+    if (state.clip >= clips.length) {
       state.clip = 0;
       state.revealed = false;
       state.lyricsShown = false;
+      state.finished = false;
+      state.verse = "blank";
+      stopVideo();
+    } else if (clipMediaChanged(previous, clips[state.clip])) {
+      state.loadedId = "";
+      state.needRestart = true;
+    }
+  } else if (previous) {
+    const index = clips.findIndex((clip) => clip.clipId === previous.clipId);
+    if (index >= 0) {
+      state.clip = index;
+      if (clipMediaChanged(previous, clips[index])) {
+        state.loadedId = "";
+        state.needRestart = true;
+      }
+    } else {
+      state.clip = 0;
+      state.revealed = false;
+      state.lyricsShown = false;
+      state.finished = false;
       stopVideo();
     }
   } else if (state.clip >= clips.length) {
@@ -439,6 +473,8 @@ function applyDoc(doc, force) {
   if (state.desk) {
     if (!state.dragging && !deskBusy()) renderDesk();
   } else {
+    const id = pageOrder()[state.page] && pageOrder()[state.page].id;
+    if (id && location.hash.replace(/^#/, "") !== id) history.replaceState(null, "", "#" + id);
     paint();
   }
 }
@@ -946,11 +982,19 @@ function paintNav() {
 }
 
 function setPage(index) {
+  const pages = pageOrder();
+  if (!pages.length) return;
+  showPage((index + pages.length) % pages.length);
+  if (!state.desk) pullDoc(true);
+}
+
+function showPage(index) {
   stopCue();
   stopVideo();
   const pages = pageOrder();
   if (!pages.length) return;
-  state.page = (index + pages.length) % pages.length;
+  landedGen += 1;
+  state.page = index;
   state.clip = 0;
   state.revealed = false;
   state.lyricsShown = false;
@@ -1049,6 +1093,7 @@ function stageKey() {
     page: pageId(),
     clip: clip && clip.clipId,
     title: clip && clip.title,
+    grade: clip && clip.gradeName,
     lyrics: clip && clip.lyrics,
     revealed: state.revealed,
     lyricsShown: state.lyricsShown,
@@ -2978,11 +3023,36 @@ async function submitLogin(event) {
   }
 }
 
-async function refresh() {
-  if (state.saving || state.dragging || deskBusy() || localDirty()) return;
+let pullSerial = 0;
+let pullApplied = 0;
+let landedGen = 0;
+
+async function pullDoc(fromNav) {
+  if (state.saving || state.dragging || deskBusy() || state.counting) return;
+  if (state.desk && localDirty()) return;
+  const gen = landedGen;
+  const serial = ++pullSerial;
+  const pageAtStart = state.page;
+  const clipAtStart = state.clip;
   try {
-    applyDoc(await request("GET"));
+    const doc = await request("GET");
+    if (serial < pullApplied) return;
+    if (landedGen !== gen) return;
+    if (state.saving || state.dragging || deskBusy() || state.counting) return;
+    if (state.desk && localDirty()) return;
+    const holdClip = !!fromNav
+      && state.page === pageAtStart
+      && state.clip === clipAtStart
+      && !state.finished
+      && !state.revealed
+      && !state.lyricsShown;
+    pullApplied = serial;
+    applyDoc(doc, true, holdClip);
   } catch (error) { /* keep the screen up */ }
+}
+
+async function refresh() {
+  return pullDoc();
 }
 
 function clipBounds(clip) {
