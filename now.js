@@ -149,7 +149,10 @@ function youtubeId(url) {
 function parseTime(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
-  if (/^\d+$/.test(raw)) return clampSec(Number(raw));
+  if (/^\d+$/.test(raw)) {
+    if (raw.length <= 2) return clampSec(Number(raw));
+    return clampSec(Number(raw.slice(0, -2)) * 60 + Number(raw.slice(-2)));
+  }
   const parts = raw.split(":");
   if (parts.length < 2 || parts.length > 3) return null;
   if (parts.some((part) => !/^\d{1,2}$/.test(part) && !/^\d+$/.test(part))) return null;
@@ -492,6 +495,30 @@ function queueSave() {
   return saveChain;
 }
 
+function bindLiveSave(node, commit, delay) {
+  const wait = delay == null ? 400 : delay;
+  const run = (force) => {
+    window.clearTimeout(node._liveTimer);
+    node._liveTimer = 0;
+    commit(force === true);
+  };
+  node._liveCommit = () => run(true);
+  const soon = () => {
+    window.clearTimeout(node._liveTimer);
+    node._liveTimer = window.setTimeout(() => run(false), wait);
+  };
+  node.addEventListener("input", soon);
+  node.addEventListener("compositionend", soon);
+  node.addEventListener("change", () => run(true));
+  node.addEventListener("blur", () => run(true));
+}
+
+function flushLiveEdits() {
+  document.querySelectorAll("input, textarea").forEach((node) => {
+    if (typeof node._liveCommit === "function") node._liveCommit();
+  });
+}
+
 async function sendDoc(payload, version) {
   state.saving = true;
   try {
@@ -527,6 +554,7 @@ function flushVideoEdits() {
 
 function saveOnLeave() {
   if (!state.admin || !state.endpoint || !state.key) return;
+  flushLiveEdits();
   flushVideoEdits();
   if (!localDirty()) return;
   const body = JSON.stringify(snapshotDoc());
@@ -662,26 +690,16 @@ function onPlayerState(event) {
   const clips = clipsForPage();
   const current = clips[state.clip];
   if (!current || current.clipId !== state.loadedId) return;
+  if (pageId() !== "random") return;
   state.loadedId = "";
   state.needRestart = true;
-  if (pageId() === "random") {
-    if (state.randomPhase !== "play") return;
-    if (state.clip >= clips.length - 1) {
-      showFinish();
-      return;
-    }
-    state.clip += 1;
-    countdownThenPlay(playGen);
+  if (state.randomPhase !== "play") return;
+  if (state.clip >= clips.length - 1) {
+    showFinish();
     return;
   }
-  if (state.clip < clips.length - 1) {
-    state.clip += 1;
-    state.revealed = false;
-    state.lyricsShown = false;
-  }
-  const kept = currentClip();
-  stopVideo(kept && kept.clipId);
-  paint();
+  state.clip += 1;
+  countdownThenPlay(playGen);
 }
 
 function startRandom() {
@@ -1394,6 +1412,7 @@ function deskBusy() {
 
 function renderDesk() {
   if (!state.desk) return;
+  flushLiveEdits();
   document.title = "찬양 진행 관리";
   const desk = document.getElementById("desk");
   if (!state.admin) {
@@ -1639,8 +1658,10 @@ function richBox(label, html) {
 function sermonBlock() {
   const current = sermonUrl();
   const input = el("input", { class: "wide-input", value: current, maxlength: "500", placeholder: "https://canva.link/…", "aria-label": "설교 URL" });
-  input.addEventListener("change", () => {
+  bindLiveSave(input, (force) => {
     const next = input.value.trim();
+    const saved = sermonUrl();
+    if (next === saved) return;
     if (!next) {
       state.doc.sermon = { url: "" };
       queueSave();
@@ -1648,12 +1669,13 @@ function sermonBlock() {
     }
     const embed = canvaEmbed(next);
     if (!embed) {
+      if (!force) return;
       toast("캔바 슬라이드 주소를 확인해 주세요.");
-      input.value = current;
+      input.value = saved;
       return;
     }
     state.doc.sermon = { url: embed };
-    input.value = embed;
+    if (force) input.value = embed;
     queueSave();
   });
   return el("section", { class: "desk-block feature-block" }, [
@@ -1668,11 +1690,13 @@ function birthdayBlock() {
   const birthday = birthdayDoc();
   state.doc.birthday = birthday;
   const video = el("input", { class: "wide-input", value: birthday.video, maxlength: "400", placeholder: "https://www.youtube.com/watch?v=", "aria-label": "생일축하 영상 URL" });
-  video.addEventListener("change", () => {
+  bindLiveSave(video, (force) => {
     const next = video.value.trim();
+    if (next === (state.doc.birthday.video || "")) return;
     if (next && !youtubeId(next)) {
+      if (!force) return;
       toast("유튜브 주소를 확인해 주세요.");
-      video.value = birthday.video;
+      video.value = state.doc.birthday.video || "";
       return;
     }
     state.doc.birthday.video = next;
@@ -1689,8 +1713,11 @@ function birthdayBlock() {
       queueSave();
     });
     const field = el("input", { type: "text", value: names, maxlength: "400", placeholder: "이름, 이름", "aria-label": month + "월 생일자" });
-    field.addEventListener("change", () => {
-      state.doc.birthday.names[index] = field.value.trim();
+    bindLiveSave(field, (force) => {
+      const next = field.value.trim();
+      if (state.doc.birthday.names[index] === next) return;
+      state.doc.birthday.names[index] = next;
+      if (force) field.value = next;
       queueSave();
     });
     rows.append(el("div", { class: "month-row" }, [
@@ -2030,13 +2057,14 @@ function videoBlock() {
   state.doc.videos.forEach((video, index) => {
     const title = el("input", { value: video.title, maxlength: "80", "aria-label": "영상 제목" });
     const url = el("input", { value: video.url, maxlength: "400", "aria-label": "유튜브 주소" });
-    const save = () => {
+    const save = (force) => {
       const current = state.doc.videos.find((item) => item.id === video.id);
       if (!current) return;
       const nextTitle = title.value.trim();
       const nextUrl = url.value.trim();
       if (nextTitle === current.title && nextUrl === current.url) return;
       if (!nextTitle || !youtubeId(nextUrl)) {
+        if (!force) return;
         toast("영상 제목과 유튜브 주소를 확인해 주세요.");
         title.value = current.title;
         url.value = current.url;
@@ -2046,10 +2074,8 @@ function videoBlock() {
       current.url = nextUrl;
       queueSave();
     };
-    title.addEventListener("change", save);
-    title.addEventListener("blur", () => window.setTimeout(save, 0));
-    url.addEventListener("change", save);
-    url.addEventListener("blur", () => window.setTimeout(save, 0));
+    bindLiveSave(title, save);
+    bindLiveSave(url, save);
     const watch = watchButton(() => ({
       title: title.value.trim() || video.title,
       url: url.value.trim()
@@ -2574,7 +2600,7 @@ function pageBlock(page) {
     viewBar(page.id)
   ]);
   if (page.id === "grade") {
-    block.append(el("p", { class: "desk-note", text: "아래 칸에 학년, 영상, 시작, 끝을 입력하고 +를 누르면 한 곡이 추가됩니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
+    block.append(el("p", { class: "desk-note", text: "아래 칸에 학년, 영상, 시작, 끝을 입력하고 +를 누르면 한 곡이 추가됩니다. 시작·끝은 130을 넣으면 1:30으로 바뀝니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
     const list = el("div", { class: "grades" });
     state.doc.grades.forEach((grade) => list.append(gradeBlock(grade)));
     block.append(list);
@@ -2583,10 +2609,10 @@ function pageBlock(page) {
     return block;
   }
   const note = page.id === "random"
-    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 전체적용하면 끝은 시작 시간에 그 초를 더한 값이 됩니다."
+    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 전체적용하면 끝은 시작 시간에 그 초를 더한 값이 됩니다. 시작·끝은 130을 넣으면 1:30으로 바뀝니다."
     : page.id === "lyrics"
-      ? "영상 제목을 고르고 가사를 입력합니다. 시작·끝은 비워 두면 처음부터 끝까지입니다."
-      : "영상 제목을 검색해 넣습니다. 시작·끝은 비워 두면 처음부터 끝까지입니다.";
+      ? "영상 제목을 고르고 가사를 입력합니다. 시작·끝은 130을 넣으면 1:30으로 바뀌고, 비워 두면 처음부터 끝까지입니다."
+      : "영상 제목을 검색해 넣습니다. 시작·끝은 130을 넣으면 1:30으로 바뀌고, 비워 두면 처음부터 끝까지입니다.";
   block.append(el("p", { class: "desk-note", text: note }));
   if (page.id === "random") block.append(playSpanBar());
   const sectionId = page.id;
@@ -2598,14 +2624,17 @@ function gradeBlock(grade) {
   const row = el("div", { class: "grade-row" });
   row.setAttribute("data-id", grade.id);
   const name = el("input", { class: "grade-name", value: grade.name, maxlength: "40", "aria-label": "학년 이름" });
-  name.addEventListener("change", () => {
+  bindLiveSave(name, (force) => {
     const next = name.value.trim();
+    if (next === grade.name) return;
     if (!next) {
+      if (!force) return;
       name.value = grade.name;
       toast("학년 이름을 입력해 주세요.");
       return;
     }
     grade.name = next;
+    if (force) name.value = next;
     queueSave();
   });
   const remove = el("button", { type: "button", class: "ghost grade-delete", text: "학년 삭제" });
@@ -2624,24 +2653,32 @@ function gradeBlock(grade) {
 
 function gradeSong(row, grade, item) {
   const video = findVideo(item.video);
-  const start = el("input", { class: "time", value: formatTime(item.start), placeholder: "시작", "aria-label": "시작 시간" });
-  const end = el("input", { class: "time", value: formatTime(item.end), placeholder: "끝", "aria-label": "종료 시간" });
-  const applyTime = () => {
-    const nextStart = readTime(start, item.start);
-    const nextEnd = readTime(end, item.end);
+  const start = timeInput(formatTime(item.start), "시작", "시작 시간");
+  const end = timeInput(formatTime(item.end), "끝", "종료 시간");
+  const applyTime = (source, force) => {
+    const startPartial = partialTime(start.value);
+    const endPartial = partialTime(end.value);
+    if (source === "start" && startPartial && !force) return;
+    if (source === "end" && endPartial && !force) return;
+    const nextStart = source === "start" ? readTime(start, item.start, force) : pairedTime(start, item.start);
+    const nextEnd = source === "end" ? readTime(end, item.end, force) : pairedTime(end, item.end);
     if (nextStart === false || nextEnd === false) return;
     if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
+      if (!force) return;
       toast("끝나는 시간은 시작보다 뒤여야 합니다.");
       start.value = formatTime(item.start);
       end.value = formatTime(item.end);
       return;
     }
+    const changed = item.start !== nextStart || item.end !== nextEnd;
     item.start = nextStart;
     item.end = nextEnd;
-    queueSave();
+    if (source === "start") start.value = formatTime(item.start);
+    if (source === "end") end.value = formatTime(item.end);
+    if (changed) queueSave();
   };
-  start.addEventListener("change", applyTime);
-  end.addEventListener("change", applyTime);
+  bindLiveSave(start, (force) => applyTime("start", force), 700);
+  bindLiveSave(end, (force) => applyTime("end", force), 700);
   const watch = watchButton(
     () => findVideo(item.video),
     () => ({
@@ -2697,8 +2734,10 @@ function gradeAddForm() {
     paintMatches(input.value);
   });
   input.addEventListener("blur", () => matches.replaceChildren());
-  const start = el("input", { class: "time", placeholder: "시작", "aria-label": "시작 시간" });
-  const end = el("input", { class: "time", placeholder: "끝", "aria-label": "종료 시간" });
+  const start = timeInput("", "시작", "시작 시간");
+  const end = timeInput("", "끝", "종료 시간");
+  bindTimeFormat(start);
+  bindTimeFormat(end);
   const add = el("button", { type: "button", class: "mark", text: "+", "aria-label": "추가" });
   add.addEventListener("click", () => {
     const gradeName = name.value.trim();
@@ -2805,27 +2844,33 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
   const grow = el("div", { class: "grow" }, [
     el("strong", { text: video ? video.title : "지워진 영상" })
   ]);
-  const start = el("input", { class: "time", value: formatTime(item.start), placeholder: "시작", "aria-label": "시작 시간" });
-  const end = el("input", { class: "time", value: formatTime(item.end), placeholder: "끝", "aria-label": "종료 시간" });
-  const applyTime = (source) => {
-    const nextStart = readTime(start, item.start);
-    const nextEnd = readTime(end, item.end);
+  const start = timeInput(formatTime(item.start), "시작", "시작 시간");
+  const end = timeInput(formatTime(item.end), "끝", "종료 시간");
+  const applyTime = (source, force) => {
+    const startPartial = partialTime(start.value);
+    const endPartial = partialTime(end.value);
+    if (source === "start" && startPartial && !force) return;
+    if (source === "end" && endPartial && !force) return;
+    const nextStart = source === "start" ? readTime(start, item.start, force) : pairedTime(start, item.start);
+    let nextEnd = source === "end" ? readTime(end, item.end, force) : pairedTime(end, item.end);
     if (nextStart === false || nextEnd === false) return;
-    let endValue = nextEnd;
-    if (source === "start" && playSeconds) endValue = clampSec((nextStart || 0) + playSeconds);
-    if (nextStart != null && endValue != null && endValue <= nextStart) {
+    if (source === "start" && playSeconds) nextEnd = clampSec((nextStart || 0) + playSeconds);
+    if (nextStart != null && nextEnd != null && nextEnd <= nextStart) {
+      if (!force) return;
       toast("끝나는 시간은 시작보다 뒤여야 합니다.");
       start.value = formatTime(item.start);
       end.value = formatTime(item.end);
       return;
     }
+    const changed = item.start !== nextStart || item.end !== nextEnd;
     item.start = nextStart;
-    item.end = endValue;
-    end.value = formatTime(item.end);
-    queueSave();
+    item.end = nextEnd;
+    if (source === "start") start.value = formatTime(item.start);
+    if (source === "end" || (source === "start" && playSeconds)) end.value = formatTime(item.end);
+    if (changed) queueSave();
   };
-  start.addEventListener("change", () => applyTime("start"));
-  end.addEventListener("change", () => applyTime("end"));
+  bindLiveSave(start, (force) => applyTime("start", force), 700);
+  bindLiveSave(end, (force) => applyTime("end", force), 700);
   const watch = watchButton(
     () => findVideo(item.video),
     () => ({
@@ -2846,8 +2891,11 @@ function clipRow(item, getItems, withLyrics, playSeconds) {
     row.classList.add("has-lyrics");
     const lyrics = el("textarea", { class: "lyrics-field", rows: "2", placeholder: "가사", maxlength: "4000" });
     lyrics.value = item.lyrics || "";
-    lyrics.addEventListener("change", () => {
-      item.lyrics = lyrics.value.trim();
+    bindLiveSave(lyrics, (force) => {
+      const next = lyrics.value.trim();
+      if ((item.lyrics || "") === next) return;
+      item.lyrics = next;
+      if (force) lyrics.value = next;
       queueSave();
     });
     row.append(lyrics);
@@ -2953,11 +3001,51 @@ function openWatch(id, title, start, end, opener) {
   close.focus();
 }
 
-function readTime(input, previous) {
+function pairedTime(input, previous) {
+  if (!String(input.value || "").trim()) return null;
+  if (partialTime(input.value)) return previous;
+  const value = parseTime(input.value);
+  return value == null ? previous : value;
+}
+
+function partialTime(text) {
+  const raw = String(text || "").trim();
+  if (!raw || /^\d+$/.test(raw)) return false;
+  return /^\d+:$/.test(raw) || /^\d+:\d$/.test(raw) || /^\d+:\d+:$/.test(raw) || /^\d+:\d+:\d$/.test(raw);
+}
+
+function timeInput(value, placeholder, label) {
+  return el("input", {
+    class: "time",
+    inputmode: "numeric",
+    value: value || "",
+    placeholder: placeholder,
+    "aria-label": label
+  });
+}
+
+function bindTimeFormat(input) {
+  bindLiveSave(input, (force) => {
+    if (!input.value.trim()) return;
+    if (!force && partialTime(input.value)) return;
+    const value = parseTime(input.value);
+    if (value == null) {
+      if (!force) return;
+      toast("시간은 130 또는 1:30처럼 입력해 주세요.");
+      input.value = "";
+      return;
+    }
+    input.value = formatTime(value);
+  }, 700);
+}
+
+function readTime(input, previous, force) {
   if (!input.value.trim()) return null;
+  if (!force && partialTime(input.value)) return false;
   const value = parseTime(input.value);
   if (value == null) {
-    toast("시간은 1:30 또는 초 단위로 입력해 주세요.");
+    if (!force) return false;
+    toast("시간은 130 또는 1:30처럼 입력해 주세요.");
     input.value = formatTime(previous);
     return false;
   }
@@ -2995,8 +3083,10 @@ function adder(getItems, withLyrics, playSeconds) {
     paintMatches(input.value);
   });
   input.addEventListener("blur", () => matches.replaceChildren());
-  const start = el("input", { class: "time", placeholder: "시작", "aria-label": "시작 시간" });
-  const end = el("input", { class: "time", placeholder: "끝", "aria-label": "종료 시간" });
+  const start = timeInput("", "시작", "시작 시간");
+  const end = timeInput("", "끝", "종료 시간");
+  bindTimeFormat(start);
+  bindTimeFormat(end);
   const lyrics = withLyrics ? el("textarea", { class: "lyrics-field", rows: "2", placeholder: "가사", maxlength: "4000" }) : null;
   const add = el("button", { type: "button", class: "mark", text: "+", "aria-label": "추가" });
   add.addEventListener("click", () => {
@@ -3494,6 +3584,9 @@ async function boot() {
   }
   setInterval(() => { refresh(); }, 5000);
   window.addEventListener("pagehide", saveOnLeave);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") saveOnLeave();
+  });
 }
 
 boot();
