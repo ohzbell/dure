@@ -850,6 +850,36 @@ body.is-sermon #sections { display: none !important; }
 }
 
 .desk-block h2 { margin: 0 0 12px; font-size: 22px; }
+
+.feature-block {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.feature-block > h2,
+.feature-block > h3,
+.feature-block > .desk-note,
+.feature-block > label,
+.feature-block .scripture-form,
+.feature-block .scripture-form h3,
+.feature-block .scripture-form .field,
+.feature-block .rich-field {
+  margin: 0;
+}
+
+.feature-block > label { display: block; }
+
+.feature-block .month-list,
+.feature-block .scripture-list,
+.feature-block .scripture-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feature-block .month-row,
+.feature-block .scripture-row { margin-top: 0; }
 .video-head { display: flex; align-items: baseline; gap: 12px; }
 .video-count { color: #ffe08a; font-size: 16px; font-weight: 700; }
 .video-no {
