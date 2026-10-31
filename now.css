@@ -963,11 +963,41 @@ textarea { min-height: 96px; resize: vertical; }
   white-space: nowrap;
 }
 
-.account-row input, .account-add input {
+.account-row input, .account-add input, .account-row .secret, .account-add .secret {
   flex: 1 1 140px;
   width: auto;
   min-width: 0;
 }
+
+.secret { position: relative; }
+
+.secret input {
+  width: 100%;
+  padding-right: 36px;
+}
+
+.desk .secret .eye {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #c8c8c8;
+}
+
+.desk .secret .eye svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.desk .secret .eye[aria-pressed="true"] { color: #fff; }
 
 .desk .account-row button, .desk .account-add button {
   flex: 0 0 auto;

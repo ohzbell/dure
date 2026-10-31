@@ -2041,6 +2041,48 @@ function accountRow(id) {
   ]);
 }
 
+function eyeIcon(shown) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const add = (d) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.append(path);
+  };
+  if (shown) {
+    add("M3 3l18 18");
+    add("M10.6 6.2A10.7 10.7 0 0 1 12 6c6.5 0 10 6 10 6a18.4 18.4 0 0 1-3.1 3.7");
+    add("M6.7 6.7C4 8.3 2 12 2 12s3.5 6 10 6c1.5 0 2.9-.3 4.1-.9");
+  } else {
+    add("M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z");
+    add("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z");
+  }
+  return svg;
+}
+
+function passwordField(input) {
+  const button = el("button", { type: "button", class: "eye", "aria-label": "비밀번호 보기" });
+  const paint = () => {
+    const shown = input.type === "text";
+    button.replaceChildren(eyeIcon(shown));
+    button.setAttribute("aria-label", shown ? "비밀번호 숨기기" : "비밀번호 보기");
+    button.setAttribute("aria-pressed", shown ? "true" : "false");
+  };
+  button.addEventListener("click", () => {
+    input.type = input.type === "password" ? "text" : "password";
+    paint();
+    input.focus();
+  });
+  paint();
+  return el("span", { class: "secret" }, [input, button]);
+}
+
 function accountEditRow(id) {
   const name = el("input", { value: id, maxlength: "40", "aria-label": "아이디", autocomplete: "off" });
   const password = el("input", { type: "password", maxlength: "200", placeholder: "비밀번호 변경", "aria-label": "비밀번호", autocomplete: "new-password" });
@@ -2051,7 +2093,7 @@ function accountEditRow(id) {
     state.accountEdit = "";
     renderDesk();
   });
-  return el("div", { class: "account-row" }, [name, password, save, cancel]);
+  return el("div", { class: "account-row" }, [name, passwordField(password), save, cancel]);
 }
 
 function accountAddRow() {
@@ -2059,7 +2101,7 @@ function accountAddRow() {
   const password = el("input", { type: "password", maxlength: "200", placeholder: "비밀번호", "aria-label": "새 비밀번호", autocomplete: "new-password" });
   const add = el("button", { type: "button", class: "ghost mark", text: "+", "aria-label": "계정 추가" });
   add.addEventListener("click", () => addAccount(name.value, password.value));
-  return el("div", { class: "account-add" }, [name, password, add]);
+  return el("div", { class: "account-add" }, [name, passwordField(password), add]);
 }
 
 async function loadAccounts() {
