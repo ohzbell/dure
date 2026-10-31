@@ -1027,7 +1027,14 @@ body.is-sermon #sections { display: none !important; }
   font-variant-numeric: tabular-nums;
 }
 .save-all { display: flex; justify-content: flex-end; margin: 0 0 14px; }
-.desk .save-all-btn { min-width: 132px; }
+.desk .save-all-btn {
+  min-width: 0;
+  min-height: 26px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
 
 .desk-note {
   margin: 0 0 18px;
