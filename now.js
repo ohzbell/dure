@@ -526,7 +526,6 @@ function startRandom() {
   state.clip = 0;
   state.revealed = false;
   state.lyricsShown = false;
-  state.videoVisible = true;
   state.needRestart = true;
   countdownThenPlay(playGen);
 }
@@ -727,7 +726,7 @@ function nextTrack() {
   const gen = playGen;
   state.revealed = false;
   state.lyricsShown = false;
-  state.videoVisible = true;
+  if (!random) state.videoVisible = true;
   state.needRestart = true;
   state.clip = nextIndex;
   paint();
@@ -741,7 +740,7 @@ function jumpTo(index) {
   state.clip = index;
   state.revealed = false;
   state.lyricsShown = false;
-  state.videoVisible = true;
+  if (pageId() !== "random") state.videoVisible = true;
   state.needRestart = true;
   if (pageId() === "random") {
     state.randomPhase = "play";
@@ -800,7 +799,7 @@ function syncVeil() {
   let open = false;
   if (clip && !state.counting && !state.desk) {
     if (pageId() === "guess") open = state.revealed && state.loadedId === clip.clipId;
-    else if (pageId() === "lyrics") open = state.videoVisible && state.loadedId === clip.clipId;
+    else if (pageId() === "lyrics" || pageId() === "random") open = state.videoVisible && state.loadedId === clip.clipId;
     else open = state.loadedId === clip.clipId;
   }
   document.body.classList.toggle("is-open", open);
@@ -809,7 +808,7 @@ function syncVeil() {
 function subtitle() {
   const clip = currentClip();
   if (!clip || state.counting) return "";
-  if (pageId() === "random" && state.randomPhase !== "play") return "";
+  if (pageId() === "random") return "";
   const id = pageId();
   if (id === "guess" || id === "lyrics") return "";
   if (clip.gradeName) return clip.gradeName + " · " + clip.title;
@@ -862,6 +861,11 @@ function paintStage() {
     stage.append(el("p", { class: "finish-show", text: "Finish!" }));
     return;
   }
+  if (id === "random" && state.randomPhase === "play") {
+    stage.append(el("div", { class: "lyrics-tools" }, [videoToggleButton()]));
+    if (clip && !state.counting) stage.append(el("p", { class: "random-title", text: clip.title }));
+    return;
+  }
   if (id === "guess" && !state.revealed) {
     const button = el("button", { type: "button", class: "answer", text: "정답" });
     button.addEventListener("click", () => {
@@ -879,15 +883,7 @@ function paintStage() {
   }
   if (id !== "lyrics") return;
   const tools = el("div", { class: "lyrics-tools" });
-  const toggle = el("button", {
-    type: "button",
-    class: "overlay-btn",
-    text: state.videoVisible ? "영상 가리기" : "영상 보이기"
-  });
-  toggle.addEventListener("click", () => {
-    state.videoVisible = !state.videoVisible;
-    paint();
-  });
+  const toggle = videoToggleButton();
   const answer = el("button", { type: "button", class: "overlay-btn", text: "정답" });
   answer.addEventListener("click", () => {
     state.lyricsShown = true;
@@ -899,6 +895,19 @@ function paintStage() {
   if (state.lyricsShown && clip) {
     stage.append(el("p", { class: "lyrics", text: clip.lyrics || "입력된 가사가 없습니다." }));
   }
+}
+
+function videoToggleButton() {
+  const button = el("button", {
+    type: "button",
+    class: "overlay-btn",
+    text: state.videoVisible ? "영상 가리기" : "영상 보이기"
+  });
+  button.addEventListener("click", () => {
+    state.videoVisible = !state.videoVisible;
+    paint();
+  });
+  return button;
 }
 
 function paintList() {

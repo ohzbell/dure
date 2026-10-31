@@ -299,6 +299,22 @@ body.is-open #veil { display: none; }
 
 .answer-title { font-size: clamp(52px, 7vw, 128px); }
 
+.random-title {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: min(90vw, 1400px);
+  transform: translate(-50%, -50%);
+  margin: 0;
+  text-align: center;
+  font-size: clamp(56px, 7vw, 120px);
+  font-weight: 700;
+  line-height: 1.15;
+  text-shadow: 0 4px 28px #000, 0 2px 8px #000;
+  pointer-events: none;
+}
+
 .finish-show {
   position: fixed;
   left: 50%;
