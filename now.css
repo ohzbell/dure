@@ -528,6 +528,17 @@ body.is-desk #desk {
   display: block;
 }
 
+.desk .desk-delete {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+
 .desk .desk-move {
   flex: 0 0 auto;
   height: 28px;

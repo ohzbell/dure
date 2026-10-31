@@ -1838,7 +1838,9 @@ function sectionRow(tab, active) {
   });
   const row = el("div", { class: "desk-tab-row" });
   row.setAttribute("data-id", tab.id);
-  row.append(grip(), button, renameButton(tab), move);
+  row.append(grip(), button, renameButton(tab));
+  if (isCustomSection(tab.id)) row.append(deleteSectionButton(tab));
+  row.append(move);
   return row;
 }
 
@@ -2222,6 +2224,31 @@ function pencilIcon() {
   path.setAttribute("stroke-linejoin", "round");
   svg.append(path);
   return svg;
+}
+
+function isCustomSection(id) {
+  return (state.doc.sections || []).some((section) => section.id === id);
+}
+
+function deleteSectionButton(page) {
+  const button = el("button", { type: "button", class: "desk-delete", text: "×", "aria-label": "섹션 삭제" });
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!isCustomSection(page.id)) return;
+    if (!window.confirm("이 섹션을 지울까요? 넣은 곡 목록도 함께 없어집니다.")) return;
+    state.doc.sections = state.doc.sections.filter((section) => section.id !== page.id);
+    if (state.doc.pages && !Array.isArray(state.doc.pages)) delete state.doc.pages[page.id];
+    if (state.doc.names && !Array.isArray(state.doc.names)) delete state.doc.names[page.id];
+    if (state.doc.views && !Array.isArray(state.doc.views)) delete state.doc.views[page.id];
+    const place = placement();
+    state.doc.active = place.active;
+    state.doc.inactive = place.inactive;
+    state.doc.tabOrder = place.active.slice();
+    if (state.deskTab === page.id) state.deskTab = "videos";
+    queueSave();
+    renderDesk();
+  });
+  return button;
 }
 
 function renameButton(page) {
