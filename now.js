@@ -892,7 +892,9 @@ function sectionView(id) {
   const titleDefault = id === "random" || id === "guess" ? "center" : "top";
   const veilDefault = id === "lyrics" || id === "random" || id === "guess";
   return {
-    title: saved && (saved.title === "center" || saved.title === "top") ? saved.title : titleDefault,
+    title: id === "lyrics"
+      ? "top"
+      : (saved && (saved.title === "center" || saved.title === "top") ? saved.title : titleDefault),
     veil: saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault,
     veilShown: saved && typeof saved.veilShown === "boolean" ? saved.veilShown : id !== "lyrics" && id !== "guess",
     titleHide: saved && typeof saved.titleHide === "boolean" ? saved.titleHide : false
@@ -1516,13 +1518,15 @@ async function uploadCue(file) {
 
 function viewBar(pageId) {
   const view = sectionView(pageId);
+  const lockTop = pageId === "lyrics";
   const top = el("button", { type: "button", class: "ghost" + (view.title === "top" ? " is-on" : ""), text: "상단" });
-  const center = el("button", { type: "button", class: "ghost" + (view.title === "center" ? " is-on" : ""), text: "가운데" });
+  const center = el("button", { type: "button", class: "ghost" + (!lockTop && view.title === "center" ? " is-on" : ""), text: "가운데" });
   top.addEventListener("click", () => {
     setSectionView(pageId, { title: "top" });
     renderDesk();
   });
-  center.addEventListener("click", () => {
+  if (lockTop) center.disabled = true;
+  else center.addEventListener("click", () => {
     setSectionView(pageId, { title: "center" });
     renderDesk();
   });

@@ -352,10 +352,11 @@ body.is-open #veil { display: none; }
 }
 
 .lyrics {
-  left: 6vw;
-  right: 6vw;
-  top: 18vh;
-  max-height: 62vh;
+  left: 50%;
+  top: 50%;
+  width: 88vw;
+  max-height: 70vh;
+  transform: translate(-50%, -50%);
   overflow: auto;
   margin: 0;
   text-align: center;
