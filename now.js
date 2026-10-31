@@ -100,6 +100,7 @@ function emptyDoc() {
     tabOrder: [],
     active: null,
     inactive: null,
+    removed: [],
     sermon: { url: "" },
     birthday: { video: "", month: 1, names: ["", "", "", "", "", "", "", "", "", "", "", ""] },
     scripture: { selected: "", rounds: [] },
@@ -194,7 +195,8 @@ function pageTitle(page) {
 }
 
 function catalog() {
-  return basePages().concat(FEATURES);
+  const gone = new Set(Array.isArray(state.doc.removed) ? state.doc.removed : []);
+  return basePages().concat(FEATURES).filter((page) => !gone.has(page.id));
 }
 
 function placement() {
@@ -386,6 +388,7 @@ function docKeyFrom(doc) {
     doc.names && !Array.isArray(doc.names) ? doc.names : {},
     doc.active || [],
     doc.inactive || [],
+    doc.removed || [],
     doc.sermon || {},
     doc.birthday || {},
     doc.scripture || {}
@@ -406,6 +409,7 @@ function snapshotDoc() {
     names: JSON.parse(JSON.stringify(state.doc.names && !Array.isArray(state.doc.names) ? state.doc.names : {})),
     active: placement().active.slice(),
     inactive: placement().inactive.slice(),
+    removed: Array.isArray(state.doc.removed) ? state.doc.removed.slice() : [],
     sermon: { url: (state.doc.sermon && state.doc.sermon.url) || "" },
     birthday: birthdayDoc(),
     scripture: scriptureDoc()
@@ -424,7 +428,7 @@ function clipMediaChanged(previous, next) {
 
 function applyDoc(doc, force, holdClip) {
   if (!force && localDirty()) return;
-  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds, doc.views, doc.sections, doc.names, doc.active, doc.inactive, doc.sermon, doc.birthday, doc.scripture]);
+  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds, doc.views, doc.sections, doc.names, doc.active, doc.inactive, doc.removed, doc.sermon, doc.birthday, doc.scripture]);
   const changed = key !== docKey;
   docKey = key;
   if (!changed) {
@@ -435,6 +439,7 @@ function applyDoc(doc, force, holdClip) {
   const previous = currentClip();
   state.doc = doc;
   if (!Array.isArray(state.doc.sections)) state.doc.sections = [];
+  if (!Array.isArray(state.doc.removed)) state.doc.removed = [];
   if (!state.doc.names || Array.isArray(state.doc.names)) state.doc.names = {};
   state.doc.sections.forEach((section) => {
     if (!Array.isArray(state.doc.pages[section.id])) state.doc.pages[section.id] = [];
@@ -1922,8 +1927,7 @@ function sectionRow(tab, active) {
   });
   const move = el("button", {
     type: "button",
-    class: "desk-move " + (active ? "is-idle" : "is-use"),
-    text: "O",
+    class: "desk-move " + (active ? "is-on" : "is-off"),
     title: active ? "미사용으로 이동" : "사용으로 이동",
     "aria-label": active ? "미사용으로 이동" : "사용으로 이동"
   });
@@ -1933,9 +1937,7 @@ function sectionRow(tab, active) {
   });
   const row = el("div", { class: "desk-tab-row" });
   row.setAttribute("data-id", tab.id);
-  row.append(grip(), button, renameButton(tab));
-  if (isCustomSection(tab.id)) row.append(deleteSectionButton(tab));
-  row.append(move);
+  row.append(grip(), button, renameButton(tab), move);
   return row;
 }
 
@@ -2367,25 +2369,23 @@ function isCustomSection(id) {
   return (state.doc.sections || []).some((section) => section.id === id);
 }
 
-function deleteSectionButton(page) {
-  const button = el("button", { type: "button", class: "desk-delete", text: "×", "aria-label": "섹션 삭제" });
-  button.addEventListener("click", (event) => {
-    event.stopPropagation();
-    if (!isCustomSection(page.id)) return;
-    if (!window.confirm("이 섹션을 지울까요? 넣은 곡 목록도 함께 없어집니다.")) return;
+function deleteSection(page) {
+  if (isCustomSection(page.id)) {
     state.doc.sections = state.doc.sections.filter((section) => section.id !== page.id);
     if (state.doc.pages && !Array.isArray(state.doc.pages)) delete state.doc.pages[page.id];
     if (state.doc.names && !Array.isArray(state.doc.names)) delete state.doc.names[page.id];
     if (state.doc.views && !Array.isArray(state.doc.views)) delete state.doc.views[page.id];
-    const place = placement();
-    state.doc.active = place.active;
-    state.doc.inactive = place.inactive;
-    state.doc.tabOrder = place.active.slice();
-    if (state.deskTab === page.id) state.deskTab = "videos";
-    queueSave();
-    renderDesk();
-  });
-  return button;
+  } else {
+    if (!Array.isArray(state.doc.removed)) state.doc.removed = [];
+    if (!state.doc.removed.includes(page.id)) state.doc.removed.push(page.id);
+  }
+  const place = placement();
+  state.doc.active = place.active;
+  state.doc.inactive = place.inactive;
+  state.doc.tabOrder = place.active.slice();
+  if (state.deskTab === page.id) state.deskTab = "videos";
+  queueSave();
+  renderDesk();
 }
 
 function renameButton(page) {
@@ -2429,11 +2429,15 @@ function openNameModal(page) {
   const input = el("input", { value: page.title, maxlength: "80", "aria-label": "섹션 이름" });
   const cancel = el("button", { type: "button", class: "ghost", text: "취소" });
   const save = el("button", { type: "button", class: "ghost", text: "저장" });
+  const remove = el("button", { type: "button", class: "danger", text: "삭제" });
   const scrim = el("button", { type: "button", class: "watch-scrim", "aria-label": "닫기" });
   const card = el("div", { class: "watch-card" }, [
     el("div", { class: "watch-head" }, [el("strong", { text: "섹션 이름" })]),
     input,
-    el("div", { class: "actions" }, [cancel, save])
+    el("div", { class: "name-actions" }, [
+      remove,
+      el("div", { class: "actions" }, [cancel, save])
+    ])
   ]);
   const overlay = el("div", { class: "watch name-pop" }, [scrim, card]);
   let closed = false;
@@ -2462,6 +2466,15 @@ function openNameModal(page) {
   scrim.addEventListener("click", close);
   cancel.addEventListener("click", close);
   save.addEventListener("click", commit);
+  remove.addEventListener("click", () => {
+    if (closed) return;
+    const message = isCustomSection(page.id)
+      ? "이 섹션을 지울까요? 넣은 곡 목록도 함께 없어집니다."
+      : "이 섹션을 지울까요?";
+    if (!window.confirm(message)) return;
+    close();
+    deleteSection(page);
+  });
   overlay.addEventListener("keydown", (event) => {
     if (event.key === "Escape") close();
     if (event.key === "Enter") {

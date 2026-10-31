@@ -552,33 +552,29 @@ body.is-desk #desk {
   display: block;
 }
 
-.desk .desk-delete {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0;
-  border-radius: 8px;
-  font-size: 18px;
-  line-height: 1;
-}
-
 .desk .desk-move {
   flex: 0 0 16px;
   width: 16px;
   height: 16px;
   min-height: 16px;
   padding: 0;
-  border: 0;
-  border-radius: 0;
+  border: 2px solid #8d8d8d;
+  border-radius: 50%;
   background: transparent;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
 }
 
-.desk .desk-move.is-use { color: #3ddc84; }
-.desk .desk-move.is-idle { color: #8d8d8d; }
+.desk .desk-move.is-on {
+  border-color: #3ddc84;
+  background: #3ddc84;
+}
+
+.desk .desk-move.is-off {
+  border-color: #8d8d8d;
+  background: transparent;
+}
 
 .zone-label {
   margin: 14px 0 6px;
@@ -806,7 +802,30 @@ body.is-sermon #sections { display: none !important; }
   padding: 8px 10px;
 }
 
-.name-pop .actions { justify-content: flex-end; }
+.name-pop .name-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.name-pop .danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: #e23b3b;
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.name-pop .actions { justify-content: flex-end; margin: 0; }
 
 .name-pop .actions button {
   display: inline-flex;
