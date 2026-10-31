@@ -124,10 +124,12 @@ body.is-open #veil { display: none; }
 }
 
 .nav {
+  display: grid;
+  place-items: center;
   width: 60px;
   height: 60px;
-  font-size: 40px;
-  line-height: 1;
+  padding: 0;
+  line-height: 0;
 }
 
 .nav svg {
@@ -1587,7 +1589,7 @@ body.watch-open { overflow: hidden; }
   .desk-main { margin-left: 0; padding: 72px 16px 80px; }
   .show-top { grid-template-columns: 40px minmax(0, 1fr) 40px; gap: 8px; padding: 10px; }
   .titles { min-height: 40px; }
-  .nav { width: 40px; height: 40px; font-size: 28px; }
+  .nav { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; }
   .nav svg { width: 18px; height: 18px; }
   .icon-btn { width: 40px; height: 40px; }
   .icon-btn svg { width: 18px; height: 18px; }

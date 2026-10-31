@@ -1046,6 +1046,16 @@ function goNextPage() {
   else setPage(state.page + 1);
 }
 
+function chevronIcon(direction) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", direction === "prev" ? "M15 6 9 12l6 6" : "M9 6l6 6-6 6");
+  svg.append(path);
+  return svg;
+}
+
 function returnIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -1067,7 +1077,7 @@ function paintNav() {
   navMode = mode;
   const next = document.getElementById("page-next");
   next.setAttribute("aria-label", back ? "첫 화면" : "다음 페이지");
-  next.replaceChildren(back ? returnIcon() : document.createTextNode("›"));
+  next.replaceChildren(back ? returnIcon() : chevronIcon("next"));
 }
 
 function setPage(index) {
