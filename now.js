@@ -1763,7 +1763,6 @@ function sermonBlock() {
   });
   return el("section", { class: "desk-block feature-block" }, [
     el("h2", { text: "설교" }),
-    el("p", { class: "desk-note", text: "캔바 슬라이드 주소를 넣으면 진행 화면 전체에 열립니다. 위쪽의 이전·다음 섹션 이동은 그대로 두고, 제목은 보이지 않습니다." }),
     el("label", { text: "설교 URL" }),
     input
   ]);
@@ -1811,7 +1810,6 @@ function birthdayBlock() {
   });
   return el("section", { class: "desk-block feature-block" }, [
     el("h2", { text: "생일축하" }),
-    el("p", { class: "desk-note", text: "선택한 월의 이름만 진행 화면에 나옵니다. 이름은 쉼표로 구분합니다." }),
     el("label", { text: "생일축하 영상 URL" }),
     video,
     el("h3", { text: "생일자" }),
@@ -1830,8 +1828,7 @@ function scriptureRounds() {
 
 function scriptureBlock() {
   const block = el("section", { class: "desk-block feature-block" }, [
-    el("h2", { text: "말씀암송" }),
-    el("p", { class: "desk-note", text: "라디오로 고른 회차만 진행 화면에 나옵니다. 새로 등록한 회차가 자동으로 선택됩니다." })
+    el("h2", { text: "말씀암송" })
   ]);
   if (state.scriptureView) {
     const round = scriptureDoc().rounds.find((item) => item.id === state.scriptureView);
@@ -2135,7 +2132,6 @@ function videoBlock() {
       document.createTextNode("유튜브 영상"),
       el("span", { class: "video-count", text: "전체 " + state.doc.videos.length })
     ]),
-    el("p", { class: "desk-note", text: "제목과 주소를 저장해 두면 각 페이지에서 제목으로 찾아 넣습니다." })
   ]);
   state.doc.videos.forEach((video, index) => {
     const title = el("input", { value: video.title, maxlength: "80", "aria-label": "영상 제목" });
@@ -2213,7 +2209,6 @@ function cueBlock() {
   const name = state.doc.cueCustom ? (state.doc.cueName || "올린 음향") : "기본 음향";
   const block = el("section", { class: "desk-block" }, [
     el("h2", { text: "랜덤플레이 사이 음향" }),
-    el("p", { class: "desk-note", text: "기본 음향은 짧은 소리 세 번 뒤에 조금 높은 긴 소리입니다. 다른 파일을 올리면 그 소리로 바뀌고, 기본 음향일 때만 화면에 3, 2, 1이 나옵니다." }),
     el("p", { class: "desk-note", text: "지금 소리: " + name })
   ]);
   const use = el("input", { type: "checkbox", id: "cue-on" });
@@ -2256,8 +2251,7 @@ function cueBlock() {
 
 function accountBlock() {
   const block = el("section", { class: "desk-block" }, [
-    el("h2", { text: "계정 관리" }),
-    el("p", { class: "desk-note", text: "아이디와 비밀번호로 관리자 화면을 엽니다." })
+    el("h2", { text: "계정 관리" })
   ]);
   if (!state.accountsLoaded) {
     block.append(el("p", { class: "desk-note", text: "계정을 불러오는 중입니다." }));
@@ -2683,7 +2677,6 @@ function pageBlock(page) {
     viewBar(page.id)
   ]);
   if (page.id === "grade") {
-    block.append(el("p", { class: "desk-note", text: "아래 칸에 학년, 영상, 시작, 끝을 입력하고 +를 누르면 한 곡이 추가됩니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀝니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
     block.append(saveAllBar());
     const list = el("div", { class: "grades" });
     state.doc.grades.forEach((grade) => list.append(gradeBlock(grade)));
@@ -2692,11 +2685,7 @@ function pageBlock(page) {
     block.append(gradeAddForm());
     return block;
   }
-  const note = page.id === "random"
-    ? "목록 순서대로 재생하고, 곡과 곡 사이에 음향이 나갑니다. 플레이시간을 입력하고 전체적용을 누르면 모든 영상의 끝 시간이 시작 시간에 그 초를 더한 값으로 바뀝니다. 적용한 뒤에는 각 영상의 끝 시간을 따로 바꿀 수 있습니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀝니다."
-    : page.id === "lyrics"
-      ? ""
-      : "영상 제목을 검색해 넣습니다. 시작·끝은 123이면 1:23, 4545이면 45:45, 23445이면 2:34:45로 바뀌고, 비워 두면 처음부터 끝까지입니다.";
+  const note = page.id === "random" ? "목록 순서대로 재생하고, 곡과 곡 사이에 '사이 음향'이 나갑니다." : "";
   if (note) block.append(el("p", { class: "desk-note", text: note }));
   block.append(saveAllBar());
   if (page.id === "random") block.append(playSpanBar());
