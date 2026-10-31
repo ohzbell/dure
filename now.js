@@ -1463,11 +1463,13 @@ function enableGradeDrag(list) {
 
 function mountClips(container, getItems, withLyrics, playSeconds) {
   const span = playSeconds || 0;
-  const list = el("div", { class: "clips" });
+  const list = el("div", { class: "clips" + (withLyrics ? " is-lyrics" : "") });
   getItems().forEach((item) => list.append(clipRow(item, getItems, withLyrics, span)));
   container.append(list);
   enableDrag(list, getItems);
-  container.append(adder(getItems, withLyrics, span));
+  const form = adder(getItems, withLyrics, span);
+  if (withLyrics) form.classList.add("is-lyrics");
+  container.append(form);
 }
 
 function playSpanBar() {

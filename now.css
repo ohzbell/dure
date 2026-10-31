@@ -554,6 +554,16 @@ textarea { min-height: 96px; resize: vertical; }
 }
 
 .clips:not(:empty) + .adder { margin-top: 16px; }
+.clips.is-lyrics { gap: 0; }
+.clips.is-lyrics .clip.has-lyrics {
+  padding: 18px 0;
+  border-bottom: 1px solid #444;
+}
+.clips.is-lyrics .clip.has-lyrics:first-child { padding-top: 0; }
+.clips.is-lyrics:not(:empty) + .adder.is-lyrics {
+  margin-top: 0;
+  padding-top: 18px;
+}
 
 .line input, .adder input, .video-row input { flex: 1 1 140px; width: auto; }
 .adder .time, .clip .time, .grade-row .time { flex: 0 0 88px; width: 88px; }
