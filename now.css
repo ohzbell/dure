@@ -702,12 +702,16 @@ body.is-desk #desk {
 
 body.is-sermon #show { pointer-events: none; }
 
-body.is-sermon .show-top { background: none; }
+body.is-sermon .show-top {
+  z-index: 8;
+  background: none;
+}
 
 body.is-sermon #canva {
-  top: 104px;
-  bottom: 0;
-  height: calc(100vh - 104px);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
   pointer-events: auto;
 }
 
@@ -1585,8 +1589,4 @@ body.watch-open { overflow: hidden; }
   .birthday-names { font-size: clamp(30px, 4.6vw, 70px); }
   .scripture-body { font-size: clamp(19.2px, 2.72vw, 41.6px); }
   .sermon-empty { font-size: clamp(24px, 3.4vw, 46px); }
-  body.is-sermon #canva {
-    top: 68px;
-    height: calc(100vh - 68px);
-  }
 }
