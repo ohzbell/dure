@@ -2652,7 +2652,6 @@ function gradeBlock(grade) {
 }
 
 function gradeSong(row, grade, item) {
-  const video = findVideo(item.video);
   const start = timeInput(formatTime(item.start), "시작", "시작 시간");
   const end = timeInput(formatTime(item.end), "끝", "종료 시간");
   const applyTime = (source, force) => {
@@ -2694,7 +2693,7 @@ function gradeSong(row, grade, item) {
     renderDesk();
   });
   row.append(
-    el("div", { class: "grow" }, [el("strong", { text: video ? video.title : "지워진 영상" })]),
+    videoTitleEditor(item.video),
     start,
     end,
     watch,
@@ -2837,13 +2836,10 @@ function readSeconds(text) {
 }
 
 function clipRow(item, getItems, withLyrics, playSeconds) {
-  const video = findVideo(item.video);
   const row = el("div", { class: "clip" });
   row.setAttribute("data-id", item.id);
   const handle = grip();
-  const grow = el("div", { class: "grow" }, [
-    el("strong", { text: video ? video.title : "지워진 영상" })
-  ]);
+  const grow = videoTitleEditor(item.video);
   const start = timeInput(formatTime(item.start), "시작", "시작 시간");
   const end = timeInput(formatTime(item.end), "끝", "종료 시간");
   const applyTime = (source, force) => {
@@ -3133,8 +3129,75 @@ function grip() {
   return handle;
 }
 
+function videoTitleEditor(videoId) {
+  const wrap = el("div", { class: "grow" });
+  let closed = false;
+  const show = () => {
+    closed = true;
+    const current = findVideo(videoId);
+    const button = el("button", {
+      type: "button",
+      class: "clip-title",
+      text: current ? current.title : "지워진 영상",
+      "aria-label": "제목 수정"
+    });
+    button.addEventListener("click", () => edit(current));
+    wrap.replaceChildren(button);
+  };
+  const edit = (current) => {
+    if (!current) {
+      toast("목록에 없는 영상은 제목을 바꿀 수 없습니다.");
+      return;
+    }
+    closed = false;
+    const original = current.title;
+    const input = el("input", { value: original, maxlength: "80", "aria-label": "영상 제목" });
+    const commit = (force) => {
+      if (closed) return;
+      const live = findVideo(videoId);
+      if (!live) return;
+      const next = input.value.trim();
+      if (!next) {
+        if (!force) return;
+        if (live.title !== original) {
+          live.title = original;
+          queueSave();
+        }
+        show();
+        return;
+      }
+      if (next !== live.title) {
+        live.title = next;
+        queueSave();
+      }
+      if (force) show();
+    };
+    bindLiveSave(input, commit);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        const live = findVideo(videoId);
+        if (live && live.title !== original) {
+          live.title = original;
+          queueSave();
+        }
+        show();
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commit(true);
+      }
+    });
+    wrap.replaceChildren(input);
+    input.focus();
+    input.select();
+  };
+  show();
+  return wrap;
+}
+
 function markLongTitles() {
-  document.querySelectorAll(".clip .grow strong, .grade-row .grow strong").forEach((node) => {
+  document.querySelectorAll(".clip-title").forEach((node) => {
     if (node.scrollWidth > node.clientWidth + 1) node.title = node.textContent;
     else node.removeAttribute("title");
   });

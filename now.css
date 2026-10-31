@@ -1379,20 +1379,30 @@ body.watch-open { overflow: hidden; }
 
 .clip { align-items: flex-start; flex-wrap: nowrap; }
 .clip .grow { flex: 1 1 180px; min-width: 0; }
-.clip .grow strong,
-.grade-row .grow strong {
+.desk .clip-title {
   display: block;
+  width: 100%;
   box-sizing: border-box;
   height: 36px;
+  min-height: 36px;
   padding: 0 10px;
   border: 2px solid transparent;
   border-radius: 8px;
+  background: transparent;
+  color: #fff;
   font-size: 14px;
   font-weight: 700;
   line-height: 32px;
+  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.desk .clip-title:hover,
+.desk .clip-title:focus {
+  border-color: #fff;
 }
 .clip .meta, .video-row .meta { color: #aaa; font-size: 13px; }
 .clip.has-lyrics { flex-wrap: wrap; }
