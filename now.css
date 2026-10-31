@@ -36,6 +36,11 @@ button, a, input, textarea { font-family: inherit; }
 
 #player-mount iframe.is-idle { visibility: hidden; }
 
+body.is-video-top #player-mount {
+  bottom: auto;
+  height: 56%;
+}
+
 #veil {
   position: fixed;
   inset: 0;
@@ -970,19 +975,22 @@ body.is-sermon #sections { display: none !important; }
 
 .view-bar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 22px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
   margin: 0 0 16px;
 }
 
 .view-group {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
 .view-label { font-weight: 700; white-space: nowrap; }
+.view-name { color: #ddd; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.view-pair { display: inline-flex; align-items: center; gap: 8px; }
 
 .view-group .view-check {
   width: 26px;

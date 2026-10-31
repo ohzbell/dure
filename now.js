@@ -1017,37 +1017,50 @@ function sectionView(id) {
   const saved = views && !Array.isArray(views) ? views[id] : null;
   const titleDefault = id === "random" || id === "guess" ? "center" : "top";
   const veilDefault = id === "lyrics" || id === "random" || id === "guess";
+  const titleHide = saved && typeof saved.titleHide === "boolean" ? saved.titleHide : false;
+  const veil = saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault;
+  const veilShown = saved && typeof saved.veilShown === "boolean" ? saved.veilShown : id !== "lyrics" && id !== "guess";
   return {
     title: id === "lyrics"
       ? "top"
       : (saved && (saved.title === "center" || saved.title === "top") ? saved.title : titleDefault),
-    veil: saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault,
-    veilShown: saved && typeof saved.veilShown === "boolean" ? saved.veilShown : id !== "lyrics" && id !== "guess",
-    titleHide: saved && typeof saved.titleHide === "boolean" ? saved.titleHide : false
+    veil: veil,
+    veilShown: veilShown,
+    titleHide: titleHide,
+    titleShow: !titleHide,
+    titleButton: saved && typeof saved.titleButton === "boolean" ? saved.titleButton : titleHide,
+    videoShow: saved && typeof saved.videoShow === "boolean" ? saved.videoShow : (!veil || veilShown),
+    videoButton: saved && typeof saved.videoButton === "boolean" ? saved.videoButton : veil,
+    video: saved && saved.video === "top" ? "top" : "center"
   };
 }
 
 function setSectionView(id, patch) {
   const current = sectionView(id);
   if (!state.doc.views || Array.isArray(state.doc.views)) state.doc.views = {};
-  state.doc.views[id] = {
+  const next = {
     title: patch.title || current.title,
     veil: typeof patch.veil === "boolean" ? patch.veil : current.veil,
     veilShown: typeof patch.veilShown === "boolean" ? patch.veilShown : current.veilShown,
-    titleHide: typeof patch.titleHide === "boolean" ? patch.titleHide : current.titleHide
+    titleHide: typeof patch.titleHide === "boolean" ? patch.titleHide : current.titleHide,
+    titleButton: typeof patch.titleButton === "boolean" ? patch.titleButton : current.titleButton,
+    videoShow: typeof patch.videoShow === "boolean" ? patch.videoShow : current.videoShow,
+    videoButton: typeof patch.videoButton === "boolean" ? patch.videoButton : current.videoButton,
+    video: patch.video === "top" || patch.video === "center" ? patch.video : current.video
   };
+  state.doc.views[id] = next;
   queueSave();
 }
 
 function veilChoice(id) {
   if (Object.prototype.hasOwnProperty.call(state.veilChoice, id)) return !!state.veilChoice[id];
-  return sectionView(id).veilShown;
+  return sectionView(id).videoShow;
 }
 
 function titleShown(id) {
-  if (!sectionView(id).titleHide) return true;
-  if (Object.prototype.hasOwnProperty.call(state.titleChoice, id)) return !!state.titleChoice[id];
-  return true;
+  const view = sectionView(id);
+  if (view.titleButton && Object.prototype.hasOwnProperty.call(state.titleChoice, id)) return !!state.titleChoice[id];
+  return view.titleShow;
 }
 
 function syncVeil() {
@@ -1064,8 +1077,8 @@ function syncVeil() {
   let open = false;
   if (clip && !state.counting && !state.desk && state.loadedId === clip.clipId) {
     if (id === "random" && state.randomPhase !== "play") open = false;
-    else if (sectionView(id).veil) open = veilChoice(id);
-    else open = true;
+    else if (sectionView(id).videoButton) open = veilChoice(id);
+    else open = sectionView(id).videoShow;
   }
   document.body.classList.toggle("is-open", open);
 }
@@ -1109,6 +1122,9 @@ function stageKey() {
     titlePlace: sectionView(pageId()).title,
     veil: sectionView(pageId()).veil,
     titleHide: sectionView(pageId()).titleHide,
+    titleButton: sectionView(pageId()).titleButton,
+    videoButton: sectionView(pageId()).videoButton,
+    videoPos: sectionView(pageId()).video,
     counting: state.counting,
     finished: state.finished,
     verse: state.verse,
@@ -1140,6 +1156,8 @@ function paint() {
   document.body.classList.toggle("is-sermon", !state.desk && !!page && page.id === "sermon");
   document.body.classList.toggle("is-birthday", !state.desk && !!page && page.id === "birthday");
   document.body.classList.toggle("is-scripture", !state.desk && !!page && page.id === "scripture");
+  const videoPage = !!page && page.id !== "sermon" && page.id !== "scripture" && page.id !== "birthday";
+  document.body.classList.toggle("is-video-top", !state.desk && videoPage && sectionView(page.id).video === "top");
   const title = document.getElementById("page-title");
   if (!page) {
     if (title) title.textContent = "";
@@ -1255,8 +1273,8 @@ function appendCenterTitle(stage, clip) {
 function appendShowToggles(stage) {
   const view = sectionView(pageId());
   const buttons = [];
-  if (view.veil) buttons.push(videoToggleButton());
-  if (view.titleHide) buttons.push(titleToggleButton());
+  if (view.videoButton) buttons.push(videoToggleButton());
+  if (view.titleButton) buttons.push(titleToggleButton());
   if (!buttons.length) return;
   stage.append(el("div", { class: "lyrics-tools is-inline" }, buttons));
 }
@@ -2317,60 +2335,99 @@ async function uploadCue(file) {
   }
 }
 
+function viewSwitch(on, label, onClick) {
+  const button = el("button", {
+    type: "button",
+    class: "veil-switch" + (on ? " is-on" : ""),
+    role: "switch",
+    "aria-checked": on ? "true" : "false",
+    "aria-label": label
+  });
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function viewPos(text, on, disabled, onClick) {
+  const button = el("button", { type: "button", class: "ghost view-pos" + (on ? " is-on" : ""), text: text });
+  if (disabled) button.disabled = true;
+  else button.addEventListener("click", onClick);
+  return button;
+}
+
+function viewPair(children) {
+  return el("span", { class: "view-pair" }, children);
+}
+
 function viewBar(pageId) {
   const view = sectionView(pageId);
   const lockTop = pageId === "lyrics";
-  const top = el("button", { type: "button", class: "ghost view-pos" + (view.title === "top" ? " is-on" : ""), text: "상단" });
-  const center = el("button", { type: "button", class: "ghost view-pos" + (!lockTop && view.title === "center" ? " is-on" : ""), text: "가운데" });
-  top.addEventListener("click", () => {
-    setSectionView(pageId, { title: "top" });
-    renderDesk();
-  });
-  if (lockTop) center.disabled = true;
-  else center.addEventListener("click", () => {
-    setSectionView(pageId, { title: "center" });
-    renderDesk();
-  });
-  const videoShown = !view.veil || view.veilShown;
-  const veil = el("input", { type: "checkbox", class: "view-check", "aria-label": "영상 보이기" });
-  veil.checked = videoShown;
-  veil.addEventListener("change", () => {
-    setSectionView(pageId, veil.checked ? { veilShown: true } : { veil: true, veilShown: false });
-    renderDesk();
-  });
-  const titleShow = el("input", { type: "checkbox", class: "view-check", "aria-label": "제목 보이기" });
-  titleShow.checked = !view.titleHide;
-  titleShow.addEventListener("change", () => setSectionView(pageId, { titleHide: !titleShow.checked }));
-  const video = [
-    el("span", { class: "view-label", text: "영상보이기" }),
-    veil
-  ];
-  if (view.veil) video.push(veilDefaultSwitch(pageId, view.veilShown));
-  return el("div", { class: "view-bar" }, [
-    el("div", { class: "view-group" }, [
-      el("span", { class: "view-label", text: "제목보이기" }),
-      titleShow,
-      top,
-      center
+  const title = el("div", { class: "view-group" }, [
+    el("span", { class: "view-label", text: "제목" }),
+    viewPair([
+      el("span", { class: "view-name", text: "보이기" }),
+      viewSwitch(view.titleShow, "제목 보이기", () => {
+        delete state.titleChoice[pageId];
+        setSectionView(pageId, { titleHide: view.titleShow });
+        renderDesk();
+      })
     ]),
-    el("div", { class: "view-group" }, video)
+    viewPair([
+      viewPos("상단", view.title === "top", false, () => {
+        setSectionView(pageId, { title: "top" });
+        renderDesk();
+      }),
+      viewPos("가운데", !lockTop && view.title === "center", lockTop, () => {
+        setSectionView(pageId, { title: "center" });
+        renderDesk();
+      })
+    ]),
+    viewPair([
+      el("span", { class: "view-name", text: "버튼제어" }),
+      viewSwitch(view.titleButton, "제목 버튼제어", () => {
+        setSectionView(pageId, { titleButton: !view.titleButton });
+        renderDesk();
+      })
+    ])
   ]);
-}
-
-function veilDefaultSwitch(pageId, shown) {
-  const button = el("button", {
-    type: "button",
-    class: "veil-switch" + (shown ? " is-on" : ""),
-    role: "switch",
-    "aria-checked": shown ? "true" : "false",
-    "aria-label": shown ? "기본 영상 보이기" : "기본 영상 가리기"
-  });
-  button.addEventListener("click", () => {
-    delete state.veilChoice[pageId];
-    setSectionView(pageId, { veilShown: !shown });
-    renderDesk();
-  });
-  return button;
+  const video = el("div", { class: "view-group" }, [
+    el("span", { class: "view-label", text: "영상" }),
+    viewPair([
+      el("span", { class: "view-name", text: "보이기" }),
+      viewSwitch(view.videoShow, "영상 보이기", () => {
+        const show = !view.videoShow;
+        delete state.veilChoice[pageId];
+        setSectionView(pageId, {
+          videoShow: show,
+          veilShown: show,
+          veil: view.videoButton ? true : !show
+        });
+        renderDesk();
+      })
+    ]),
+    viewPair([
+      viewPos("상단", view.video === "top", false, () => {
+        setSectionView(pageId, { video: "top" });
+        renderDesk();
+      }),
+      viewPos("가운데", view.video !== "top", false, () => {
+        setSectionView(pageId, { video: "center" });
+        renderDesk();
+      })
+    ]),
+    viewPair([
+      el("span", { class: "view-name", text: "버튼제어" }),
+      viewSwitch(view.videoButton, "영상 버튼제어", () => {
+        const on = !view.videoButton;
+        delete state.veilChoice[pageId];
+        setSectionView(pageId, {
+          videoButton: on,
+          veil: on ? true : !view.videoShow
+        });
+        renderDesk();
+      })
+    ])
+  ]);
+  return el("div", { class: "view-bar" }, [title, video]);
 }
 
 function pencilIcon() {
