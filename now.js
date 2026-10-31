@@ -1461,28 +1461,29 @@ function viewBar(pageId) {
     setSectionView(pageId, { title: "center" });
     renderDesk();
   });
-  const veil = el("input", { type: "checkbox", class: "view-check" });
+  const veil = el("input", { type: "checkbox", class: "view-check", "aria-label": "영상 가리기" });
   veil.checked = view.veil;
   veil.addEventListener("change", () => {
     setSectionView(pageId, { veil: veil.checked });
     renderDesk();
   });
-  const veilLabel = el("label", { class: "view-veil" });
-  veilLabel.append(veil, document.createTextNode("영상 가리기"));
-  const titleHide = el("input", { type: "checkbox" });
+  const titleHide = el("input", { type: "checkbox", class: "view-check", "aria-label": "제목 가리기" });
   titleHide.checked = view.titleHide;
   titleHide.addEventListener("change", () => setSectionView(pageId, { titleHide: titleHide.checked }));
-  const titleLabel = el("label", { class: "view-veil" });
-  titleLabel.append(titleHide, document.createTextNode("제목 가리기"));
-  const bar = [
-    el("span", { class: "view-label", text: "제목 위치" }),
-    top,
-    center,
-    veilLabel
+  const video = [
+    el("span", { class: "view-label", text: "영상" }),
+    veil
   ];
-  if (view.veil) bar.push(veilDefaultSwitch(pageId, view.veilShown));
-  bar.push(titleLabel);
-  return el("div", { class: "view-bar" }, bar);
+  if (view.veil) video.push(veilDefaultSwitch(pageId, view.veilShown));
+  return el("div", { class: "view-bar" }, [
+    el("div", { class: "view-group" }, [
+      el("span", { class: "view-label", text: "영상제목" }),
+      titleHide,
+      top,
+      center
+    ]),
+    el("div", { class: "view-group" }, video)
+  ]);
 }
 
 function veilDefaultSwitch(pageId, shown) {
