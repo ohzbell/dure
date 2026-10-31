@@ -273,10 +273,8 @@ body.is-open #veil { display: none; }
 
 #playlist, #sections {
   position: fixed;
-  right: 28px;
-  bottom: 108px;
+  box-sizing: border-box;
   z-index: 6;
-  width: min(560px, calc(100vw - 56px));
   max-height: min(58vh, 760px);
   overflow: auto;
   padding: 12px;
@@ -285,9 +283,19 @@ body.is-open #veil { display: none; }
   background: rgba(0, 0, 0, 0.9);
 }
 
-#playlist[hidden], #sections[hidden] { display: none; }
+#playlist {
+  left: calc(18px + 3 * (72px + 10px));
+  bottom: calc(18px + 72px + 12px);
+  width: min(560px, calc(100vw - 36px - 3 * (72px + 10px)));
+}
 
-#sections { width: min(420px, calc(100vw - 56px)); }
+#sections {
+  right: 18px;
+  bottom: calc(18px + 72px + 12px);
+  width: min(420px, calc(100vw - 36px));
+}
+
+#playlist[hidden], #sections[hidden] { display: none; }
 
 #section-toggle circle { fill: currentColor; stroke: none; }
 
@@ -1457,11 +1465,18 @@ body.watch-open { overflow: hidden; }
   .seek-time { min-width: 3.2em; font-size: 13px; }
   .seek input[type="range"]::-webkit-slider-thumb,
   .seek input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; }
-  #playlist, #sections {
-    left: 10px;
-    right: 10px;
-    width: auto;
+  #playlist {
+    left: calc(8px + 3 * (44px + 6px));
+    right: auto;
     bottom: 108px;
+    width: min(560px, calc(100vw - 18px - 3 * (44px + 6px)));
+    max-height: min(48vh, 420px);
+  }
+  #sections {
+    left: auto;
+    right: 8px;
+    bottom: 108px;
+    width: min(420px, calc(100vw - 16px));
     max-height: min(48vh, 420px);
   }
   .track { font-size: 18px; padding: 12px 14px; }
