@@ -357,7 +357,9 @@ body.is-open #veil { display: none; }
   left: 50%;
   top: 50%;
   z-index: 4;
-  width: min(90vw, 1400px);
+  box-sizing: border-box;
+  width: min(64vw, 760px);
+  overflow-wrap: break-word;
   transform: translate(-50%, -50%);
   margin: 0;
   text-align: center;
