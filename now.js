@@ -1147,12 +1147,7 @@ function clipCountLabel() {
 function visibleTitle(page) {
   if (!page || page.id === "sermon") return "";
   if (page.id === "birthday") return birthdayDoc().month + "월 생일 축하합니다!";
-  if (page.id === "scripture") {
-    const round = selectedRound();
-    if (!round) return "말씀 암송";
-    const name = String(round.name || "").trim();
-    return name || (round.no + "회차 말씀 암송");
-  }
+  if (page.id === "scripture") return "말씀암송";
   return page.title;
 }
 
@@ -1170,7 +1165,10 @@ function paint() {
   title.replaceChildren(document.createTextNode(visibleTitle(page)));
   if (count) title.append(el("span", { class: "clip-count", text: count }));
   const sub = document.getElementById("page-sub");
-  if (!subtitle()) sub.replaceChildren();
+  if (page.id === "scripture") {
+    const round = selectedRound();
+    sub.textContent = round ? roundLabel(round) : "";
+  } else if (!subtitle()) sub.replaceChildren();
   else paintSongTitle(sub, currentClip());
   paintNav();
   if (!state.desk) document.title = page.id === "sermon" ? "설교" : (isWorship(page.id) ? page.title : (visibleTitle(page) || page.title));
