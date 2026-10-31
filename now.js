@@ -42,6 +42,10 @@ const state = {
 };
 
 let player = null;
+let standby = null;
+let standbyClipId = "";
+let standbyReady = false;
+let standbyGen = 0;
 let playerPromise = null;
 let playerReady = Promise.resolve();
 let playGen = 0;
@@ -394,37 +398,94 @@ function loadYouTube() {
   });
 }
 
+function playerOptions(onReady) {
+  return {
+    width: "100%",
+    height: "100%",
+    playerVars: {
+      autoplay: 0,
+      controls: 0,
+      rel: 0,
+      modestbranding: 1,
+      playsinline: 1,
+      fs: 0,
+      disablekb: 1,
+      iv_load_policy: 3,
+      origin: location.origin
+    },
+    events: {
+      onReady: onReady,
+      onStateChange: onPlayerState,
+      onError: (event) => {
+        if (event && event.target === player) toast("영상을 재생하지 못했습니다.");
+      }
+    }
+  };
+}
+
+function slotFrame(item) {
+  try { return item && item.getIframe ? item.getIframe() : null; } catch (error) { return null; }
+}
+
+function markSlots() {
+  const live = slotFrame(player);
+  const idle = slotFrame(standby);
+  if (live) {
+    live.classList.add("is-live");
+    live.classList.remove("is-idle");
+  }
+  if (idle) {
+    idle.classList.add("is-idle");
+    idle.classList.remove("is-live");
+  }
+}
+
+function hush(item) {
+  try { if (item) item.mute(); } catch (error) { /* not ready */ }
+}
+
+function speak(item) {
+  try {
+    if (!item) return;
+    item.unMute();
+    item.setVolume(100);
+  } catch (error) { /* not ready */ }
+}
+
 function ensurePlayer() {
   if (!playerPromise) {
-    playerPromise = playerReady.then(() => new Promise((resolve) => {
-      player = new YT.Player("yt", {
-        width: "100%",
-        height: "100%",
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          rel: 0,
-          modestbranding: 1,
-          playsinline: 1,
-          fs: 0,
-          disablekb: 1,
-          iv_load_policy: 3,
-          origin: location.origin
-        },
-        events: {
-          onReady: () => resolve(player),
-          onStateChange: onPlayerState,
-          onError: () => toast("영상을 재생하지 못했습니다.")
-        }
-      });
-    }));
+    playerPromise = playerReady.then(() => Promise.all([
+      new Promise((resolve) => { new YT.Player("yt", playerOptions((event) => resolve(event.target))); }),
+      new Promise((resolve) => { new YT.Player("yt-next", playerOptions((event) => resolve(event.target))); })
+    ])).then((pair) => {
+      player = pair[0];
+      standby = pair[1];
+      hush(standby);
+      markSlots();
+      return player;
+    });
   }
   return playerPromise;
 }
 
 function onPlayerState(event) {
   if (!event) return;
-  if (event.data === 1) armEnd = true;
+  if (standby && event.target === standby) {
+    if (!standbyClipId) return;
+    if (event.data === 1) {
+      try { standby.pauseVideo(); } catch (error) { /* keep the cue quiet */ }
+      hush(standby);
+      standbyReady = true;
+      return;
+    }
+    if (event.data === 5) standbyReady = true;
+    return;
+  }
+  if (!player || event.target !== player) return;
+  if (event.data === 1) {
+    armEnd = true;
+    primeNext();
+  }
   if (event.data !== 0 || !armEnd) return;
   armEnd = false;
   if (state.counting || state.desk) return;
@@ -449,7 +510,8 @@ function onPlayerState(event) {
     state.lyricsShown = false;
     state.videoVisible = true;
   }
-  stopVideo();
+  const kept = currentClip();
+  stopVideo(kept && kept.clipId);
   paint();
 }
 
@@ -476,16 +538,66 @@ function finishRandom() {
   paint();
 }
 
-function loadClip(clip, autoplay) {
+function clipArgs(clip) {
   const id = youtubeId(clip.url);
-  if (!id || !player) return;
+  if (!id) return null;
   const args = { videoId: id, startSeconds: clip.start || 0 };
   if (clip.end) args.endSeconds = clip.end;
+  return args;
+}
+
+function primeNext() {
+  if (!standby || state.desk) return;
+  const clip = clipsForPage()[state.clip + 1];
+  if (!clip) {
+    standbyClipId = "";
+    standbyReady = false;
+    standbyGen = 0;
+    return;
+  }
+  if (standbyClipId === clip.clipId) return;
+  const args = clipArgs(clip);
+  if (!args) return;
+  standbyGen += 1;
+  standbyClipId = clip.clipId;
+  standbyReady = false;
+  hush(standby);
+  try { standby.cueVideoById(args); } catch (error) {
+    standbyClipId = "";
+    standbyGen = 0;
+  }
+}
+
+function takePreload(clip) {
+  if (!standby || standbyClipId !== clip.clipId || !standbyReady) return false;
+  const previous = player;
+  player = standby;
+  standby = previous;
+  standbyClipId = "";
+  standbyReady = false;
+  standbyGen = 0;
+  markSlots();
   armEnd = false;
   state.loadedId = clip.clipId;
   state.needRestart = false;
+  speak(player);
+  try { player.playVideo(); } catch (error) { /* the cue will load it */ }
+  hush(standby);
+  try { standby.stopVideo(); } catch (error) { /* already quiet */ }
+  primeNext();
+  return true;
+}
+
+function loadClip(clip, autoplay) {
+  const args = clipArgs(clip);
+  if (!args || !player) return;
+  armEnd = false;
+  state.loadedId = clip.clipId;
+  state.needRestart = false;
+  speak(player);
   if (autoplay) player.loadVideoById(args);
   else player.cueVideoById(args);
+  primeNext();
 }
 
 function playCurrent() {
@@ -509,16 +621,23 @@ function playCurrent() {
       syncVeil();
       return;
     }
-    loadClip(clip, true);
+    if (!takePreload(clip)) loadClip(clip, true);
     syncVeil();
   }).catch(() => toast("영상 재생기를 준비하지 못했습니다."));
 }
 
-function stopVideo() {
+function stopVideo(keepClipId) {
   armEnd = false;
   state.loadedId = "";
   state.needRestart = true;
   try { if (player && player.stopVideo) player.stopVideo(); } catch (error) { /* not ready */ }
+  if (!keepClipId || keepClipId !== standbyClipId) {
+    standbyClipId = "";
+    standbyReady = false;
+    standbyGen = 0;
+    hush(standby);
+    try { if (standby && standby.stopVideo) standby.stopVideo(); } catch (error) { /* not ready */ }
+  }
   syncVeil();
 }
 
@@ -591,31 +710,34 @@ function nextTrack() {
     toast("이 화면에 넣은 영상이 없습니다.");
     return;
   }
-  stopVideo();
+  const random = pageId() === "random";
+  if (random && state.randomPhase !== "play") {
+    stopVideo();
+    stopCue();
+    return;
+  }
+  if (random && state.clip >= clips.length - 1) {
+    finishRandom();
+    return;
+  }
+  const nextIndex = random ? state.clip + 1 : (state.clip + 1) % clips.length;
+  const next = clips[nextIndex];
+  stopVideo(next && next.clipId);
   stopCue();
   const gen = playGen;
   state.revealed = false;
   state.lyricsShown = false;
   state.videoVisible = true;
   state.needRestart = true;
-  if (pageId() === "random") {
-    if (state.randomPhase !== "play") return;
-    if (state.clip >= clips.length - 1) {
-      finishRandom();
-      return;
-    }
-    state.clip += 1;
-    paint();
-    countdownThenPlay(gen);
-    return;
-  }
-  state.clip = (state.clip + 1) % clips.length;
+  state.clip = nextIndex;
   paint();
+  if (random) countdownThenPlay(gen);
 }
 
 function jumpTo(index) {
+  const target = clipsForPage()[index];
   stopCue();
-  stopVideo();
+  stopVideo(target && target.clipId);
   state.clip = index;
   state.revealed = false;
   state.lyricsShown = false;
