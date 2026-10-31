@@ -1034,10 +1034,13 @@ function editorCard() {
 
 function videoBlock() {
   const block = el("section", { class: "desk-block" }, [
-    el("h2", { text: "유튜브 영상" }),
+    el("h2", { class: "video-head" }, [
+      document.createTextNode("유튜브 영상"),
+      el("span", { class: "video-count", text: "전체 " + state.doc.videos.length })
+    ]),
     el("p", { class: "desk-note", text: "제목과 주소를 저장해 두면 각 페이지에서 제목으로 찾아 넣습니다." })
   ]);
-  state.doc.videos.forEach((video) => {
+  state.doc.videos.forEach((video, index) => {
     const title = el("input", { value: video.title, maxlength: "80", "aria-label": "영상 제목" });
     const url = el("input", { value: video.url, maxlength: "400", "aria-label": "유튜브 주소" });
     const save = () => {
@@ -1077,7 +1080,13 @@ function videoBlock() {
       queueSave();
       renderDesk();
     });
-    const row = el("div", { class: "video-row" }, [title, url, watch, remove]);
+    const row = el("div", { class: "video-row" }, [
+      el("span", { class: "video-no", text: "No. " + (index + 1) }),
+      title,
+      url,
+      watch,
+      remove
+    ]);
     row.setAttribute("data-id", video.id);
     block.append(row);
   });
@@ -1095,7 +1104,12 @@ function videoBlock() {
     queueSave();
     renderDesk();
   });
-  block.append(el("div", { class: "line" }, [title, url, add]));
+  block.append(el("div", { class: "line" }, [
+    el("span", { class: "video-no", "aria-hidden": "true" }),
+    title,
+    url,
+    add
+  ]));
   return block;
 }
 
