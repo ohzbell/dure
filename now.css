@@ -630,7 +630,7 @@ body.is-desk #desk {
 
 .month-label, .round-no { font-weight: 700; white-space: nowrap; }
 .month-row input:not([type="radio"]) { flex: 1; min-width: 0; }
-.round-no { flex: 1; min-width: 0; }
+.round-no { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .desk .scripture-row button, .desk .pager button, .desk .rich-btn, .desk .scripture-card button {
   min-height: 32px;

@@ -1128,7 +1128,9 @@ function visibleTitle(page) {
   if (page.id === "birthday") return birthdayDoc().month + "월 생일 축하합니다!";
   if (page.id === "scripture") {
     const round = selectedRound();
-    return round ? round.no + "회차 말씀 암송" : "말씀 암송";
+    if (!round) return "말씀 암송";
+    const name = String(round.name || "").trim();
+    return name || (round.no + "회차 말씀 암송");
   }
   return page.title;
 }
@@ -1642,6 +1644,11 @@ function birthdayBlock() {
   ]);
 }
 
+function roundLabel(round) {
+  const name = String((round && round.name) || "").trim();
+  return name || (round.no + "회차");
+}
+
 function scriptureRounds() {
   return scriptureDoc().rounds.slice().sort((a, b) => Number(b.no) - Number(a.no));
 }
@@ -1677,7 +1684,7 @@ function scriptureRead(round) {
     renderDesk();
   });
   const card = el("div", { class: "scripture-card" }, [
-    el("div", { class: "scripture-card-head" }, [el("strong", { text: round.no + "회차" }), close])
+    el("div", { class: "scripture-card-head" }, [el("strong", { text: roundLabel(round) }), close])
   ]);
   [["오늘의 말씀(한글)", round.korean], ["오늘의 말씀(영문)", round.english], ["단어학습", round.words]].forEach(([label, html]) => {
     const body = el("div", { class: "rich-read" });
@@ -1688,6 +1695,15 @@ function scriptureRead(round) {
 }
 
 function scriptureForm(round) {
+  const book = scriptureDoc();
+  const nextNo = round ? Number(round.no) : book.rounds.reduce((max, item) => Math.max(max, Number(item.no) || 0), 0) + 1;
+  const name = el("input", {
+    class: "wide-input",
+    value: round ? roundLabel(round) : (nextNo + "회차"),
+    maxlength: "80",
+    placeholder: "회차 이름",
+    "aria-label": "회차 이름"
+  });
   const korean = richBox("오늘의 말씀(한글)", round ? round.korean : "");
   const english = richBox("오늘의 말씀(영문)", round ? round.english : "");
   const words = richBox("단어학습", round ? round.words : "");
@@ -1698,10 +1714,17 @@ function scriptureForm(round) {
     renderDesk();
   });
   save.addEventListener("click", () => {
+    const title = name.value.trim();
+    if (!title) {
+      toast("회차 이름을 입력해 주세요.");
+      name.focus();
+      return;
+    }
     const book = scriptureDoc();
     const next = {
       id: round ? round.id : uid(),
-      no: round ? Number(round.no) : book.rounds.reduce((max, item) => Math.max(max, Number(item.no) || 0), 0) + 1,
+      no: nextNo,
+      name: title,
       korean: korean.read(),
       english: english.read(),
       words: words.read()
@@ -1715,7 +1738,9 @@ function scriptureForm(round) {
     renderDesk();
   });
   return el("div", { class: "scripture-form" }, [
-    el("h3", { text: round ? round.no + "회차 수정" : "회차 추가" }),
+    el("h3", { text: round ? "회차 수정" : "회차 추가" }),
+    el("label", { class: "field", text: "회차 이름" }),
+    name,
     korean.node,
     english.node,
     words.node,
@@ -1734,7 +1759,7 @@ function scriptureList() {
   const list = el("div", { class: "scripture-list" });
   if (!rounds.length) list.append(el("p", { class: "desk-note", text: "등록된 회차가 없습니다." }));
   slice.forEach((round) => {
-    const radio = el("input", { type: "radio", name: "scripture-round", "aria-label": round.no + "회차 진행 화면에 표시" });
+    const radio = el("input", { type: "radio", name: "scripture-round", "aria-label": roundLabel(round) + " 진행 화면에 표시" });
     radio.checked = book.selected === round.id;
     radio.addEventListener("change", () => {
       if (!radio.checked) return;
@@ -1755,7 +1780,7 @@ function scriptureList() {
       renderDesk();
     });
     remove.addEventListener("click", () => {
-      if (!window.confirm(round.no + "회차를 지울까요?")) return;
+      if (!window.confirm(roundLabel(round) + "을 지울까요?")) return;
       const current = scriptureDoc();
       const nextRounds = current.rounds.filter((item) => item.id !== round.id);
       let selected = current.selected === round.id ? "" : current.selected;
@@ -1771,7 +1796,7 @@ function scriptureList() {
     });
     list.append(el("div", { class: "scripture-row" }, [
       radio,
-      el("span", { class: "round-no", text: round.no + "회차" }),
+      el("span", { class: "round-no", text: roundLabel(round) }),
       view,
       edit,
       remove
