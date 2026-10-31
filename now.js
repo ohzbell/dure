@@ -26,7 +26,7 @@ const state = {
   clip: 0,
   revealed: false,
   lyricsShown: false,
-  videoVisible: true,
+  veilChoice: {},
   listOpen: false,
   counting: false,
   randomPhase: "start",
@@ -60,6 +60,7 @@ let shownKey = "";
 let markTimers = [];
 let seeking = false;
 let seekTimer = 0;
+let prepareGen = 0;
 
 function emptyDoc() {
   return {
@@ -78,7 +79,8 @@ function emptyDoc() {
     },
     grades: [],
     tabOrder: [],
-    playSeconds: null
+    playSeconds: null,
+    views: {}
   };
 }
 
@@ -265,7 +267,8 @@ function docKeyFrom(doc) {
     doc.grades,
     !!doc.cueOff,
     doc.tabOrder || [],
-    doc.playSeconds || null
+    doc.playSeconds || null,
+    doc.views || {}
   ]);
 }
 
@@ -277,7 +280,8 @@ function snapshotDoc() {
     pages: JSON.parse(JSON.stringify(state.doc.pages)),
     grades: JSON.parse(JSON.stringify(state.doc.grades)),
     tabOrder: (state.doc.tabOrder || []).slice(),
-    playSeconds: state.doc.playSeconds || null
+    playSeconds: state.doc.playSeconds || null,
+    views: JSON.parse(JSON.stringify(state.doc.views || {}))
   };
 }
 
@@ -288,7 +292,7 @@ function localDirty() {
 
 function applyDoc(doc, force) {
   if (!force && localDirty()) return;
-  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds]);
+  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds, doc.views]);
   const changed = key !== docKey;
   docKey = key;
   if (!changed) {
@@ -506,7 +510,6 @@ function onPlayerState(event) {
     state.clip += 1;
     state.revealed = false;
     state.lyricsShown = false;
-    state.videoVisible = true;
   }
   const kept = currentClip();
   stopVideo(kept && kept.clipId);
@@ -519,12 +522,10 @@ function startRandom() {
     return;
   }
   stopCue();
-  stopVideo();
   state.randomPhase = "play";
   state.clip = 0;
   state.revealed = false;
   state.lyricsShown = false;
-  state.needRestart = true;
   countdownThenPlay(playGen);
 }
 
@@ -565,7 +566,7 @@ function primeNext() {
   }
 }
 
-function takePreload(clip) {
+function takePreload(clip, autoplay) {
   if (!standby || standbyClipId !== clip.clipId || !standbyReady) return false;
   const previous = player;
   player = standby;
@@ -578,7 +579,10 @@ function takePreload(clip) {
   state.loadedId = clip.clipId;
   state.needRestart = false;
   speak(player);
-  try { player.playVideo(); } catch (error) { /* the cue will load it */ }
+  try {
+    if (autoplay) player.playVideo();
+    else if (player.getPlayerState() === 1) player.pauseVideo();
+  } catch (error) { /* the cue will load it */ }
   hush(standby);
   try { standby.stopVideo(); } catch (error) { /* already quiet */ }
   primeNext();
@@ -595,6 +599,42 @@ function loadClip(clip, autoplay) {
   if (autoplay) player.loadVideoById(args);
   else player.cueVideoById(args);
   primeNext();
+  syncVeil();
+}
+
+function prepareClip(autoplay) {
+  if (state.desk || state.counting) return;
+  const clip = currentClip();
+  if (!clip) return;
+  const gen = ++prepareGen;
+  ensurePlayer().then(() => {
+    if (gen !== prepareGen || state.desk || state.counting) return;
+    const now = currentClip();
+    if (!now || now.clipId !== clip.clipId) return;
+    const code = playerCode();
+    const ready = state.loadedId === clip.clipId && !state.needRestart;
+    if (ready && autoplay && (code === 1 || code === 3)) {
+      syncVeil();
+      primeNext();
+      return;
+    }
+    if (ready && autoplay && (code === 2 || code === 5 || code === -1)) {
+      speak(player);
+      try { player.playVideo(); } catch (error) { /* retry below */ }
+      primeNext();
+      syncVeil();
+      return;
+    }
+    if (ready && !autoplay) {
+      primeNext();
+      syncVeil();
+      return;
+    }
+    if (!takePreload(clip, autoplay)) loadClip(clip, autoplay);
+    syncVeil();
+  }).catch(() => {
+    if (autoplay) toast("영상 재생기를 준비하지 못했습니다.");
+  });
 }
 
 function playCurrent() {
@@ -609,18 +649,7 @@ function playCurrent() {
     paint();
   }
   syncVeil();
-  ensurePlayer().then(() => {
-    const same = state.loadedId === clip.clipId && !state.needRestart;
-    let paused = false;
-    try { paused = player.getPlayerState() === 2; } catch (error) { paused = false; }
-    if (same && paused) {
-      player.playVideo();
-      syncVeil();
-      return;
-    }
-    if (!takePreload(clip)) loadClip(clip, true);
-    syncVeil();
-  }).catch(() => toast("영상 재생기를 준비하지 못했습니다."));
+  prepareClip(true);
 }
 
 function stopVideo(keepClipId) {
@@ -724,7 +753,6 @@ function nextTrack() {
   const gen = playGen;
   state.revealed = false;
   state.lyricsShown = false;
-  if (!random) state.videoVisible = true;
   state.needRestart = true;
   state.clip = nextIndex;
   paint();
@@ -738,7 +766,6 @@ function jumpTo(index) {
   state.clip = index;
   state.revealed = false;
   state.lyricsShown = false;
-  if (pageId() !== "random") state.videoVisible = true;
   state.needRestart = true;
   if (pageId() === "random") {
     state.randomPhase = "play";
@@ -786,29 +813,56 @@ function setPage(index) {
   state.clip = 0;
   state.revealed = false;
   state.lyricsShown = false;
-  state.videoVisible = true;
   if (pages[state.page].id === "random") state.randomPhase = "start";
   history.replaceState(null, "", "#" + pages[state.page].id);
   paint();
 }
 
+function sectionView(id) {
+  const views = state.doc.views;
+  const saved = views && !Array.isArray(views) ? views[id] : null;
+  const titleDefault = id === "random" || id === "guess" ? "center" : "top";
+  const veilDefault = id === "lyrics" || id === "random";
+  return {
+    title: saved && (saved.title === "center" || saved.title === "top") ? saved.title : titleDefault,
+    veil: saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault
+  };
+}
+
+function setSectionView(id, patch) {
+  const current = sectionView(id);
+  if (!state.doc.views || Array.isArray(state.doc.views)) state.doc.views = {};
+  state.doc.views[id] = {
+    title: patch.title || current.title,
+    veil: typeof patch.veil === "boolean" ? patch.veil : current.veil
+  };
+  queueSave();
+}
+
+function veilChoice(id) {
+  if (Object.prototype.hasOwnProperty.call(state.veilChoice, id)) return !!state.veilChoice[id];
+  return id !== "lyrics";
+}
+
 function syncVeil() {
   const clip = currentClip();
+  const id = pageId();
   let open = false;
-  if (clip && !state.counting && !state.desk) {
-    if (pageId() === "guess") open = state.revealed && state.loadedId === clip.clipId;
-    else if (pageId() === "lyrics" || pageId() === "random") open = state.videoVisible && state.loadedId === clip.clipId;
-    else open = state.loadedId === clip.clipId;
+  if (clip && !state.counting && !state.desk && state.loadedId === clip.clipId) {
+    if (id === "random" && state.randomPhase !== "play") open = false;
+    else if (id === "guess" && !state.revealed) open = false;
+    else if (sectionView(id).veil) open = veilChoice(id);
+    else open = true;
   }
   document.body.classList.toggle("is-open", open);
 }
 
 function subtitle() {
   const clip = currentClip();
-  if (!clip || state.counting) return "";
-  if (pageId() === "random") return "";
   const id = pageId();
-  if (id === "guess" || id === "lyrics") return "";
+  if (!clip || state.counting || sectionView(id).title !== "top") return "";
+  if (id === "random" && state.randomPhase !== "play") return "";
+  if ((id === "guess" || id === "lyrics") && !(id === "guess" ? state.revealed : state.lyricsShown)) return "";
   if (clip.gradeName) return clip.gradeName + " · " + clip.title;
   return clip.title;
 }
@@ -822,7 +876,9 @@ function stageKey() {
     lyrics: clip && clip.lyrics,
     revealed: state.revealed,
     lyricsShown: state.lyricsShown,
-    video: state.videoVisible,
+    video: veilChoice(pageId()),
+    titlePlace: sectionView(pageId()).title,
+    veil: sectionView(pageId()).veil,
     counting: state.counting,
     random: state.randomPhase
   });
@@ -842,6 +898,7 @@ function paint() {
     paintStage();
   }
   if (state.listOpen) paintList();
+  if (!state.desk && !state.counting) prepareClip(false);
 }
 
 function paintStage() {
@@ -860,49 +917,70 @@ function paintStage() {
     return;
   }
   if (id === "random" && state.randomPhase === "play") {
-    stage.append(el("div", { class: "lyrics-tools is-inline" }, [videoToggleButton()]));
-    if (clip && !state.counting) stage.append(el("p", { class: "random-title", text: clip.title }));
+    appendVeilToggle(stage);
+    appendCenterTitle(stage, clip);
     return;
   }
   if (id === "guess" && !state.revealed) {
     const button = el("button", { type: "button", class: "answer", text: "정답" });
     button.addEventListener("click", () => {
       state.revealed = true;
-      state.needRestart = true;
       paint();
       playCurrent();
     });
     stage.append(button);
+    appendVeilToggle(stage);
     return;
   }
-  if (id === "guess" && state.revealed && clip) {
-    stage.append(el("p", { class: "answer-title", text: clip.title }));
+  if (id === "guess" && state.revealed) {
+    appendVeilToggle(stage);
+    appendCenterTitle(stage, clip);
     return;
   }
-  if (id !== "lyrics") return;
-  const tools = el("div", { class: "lyrics-tools" });
-  const toggle = videoToggleButton();
-  const answer = el("button", { type: "button", class: "overlay-btn", text: "정답" });
-  answer.addEventListener("click", () => {
-    state.lyricsShown = true;
-    try { if (player) player.pauseVideo(); } catch (error) { /* ignore */ }
-    paint();
-  });
-  tools.append(toggle, answer);
-  stage.append(tools);
-  if (state.lyricsShown && clip) {
-    stage.append(el("p", { class: "lyrics", text: clip.lyrics || "입력된 가사가 없습니다." }));
+  if (id === "lyrics") {
+    if (!state.lyricsShown) {
+      const button = el("button", { type: "button", class: "answer", text: "정답" });
+      button.addEventListener("click", () => {
+        state.lyricsShown = true;
+        try { if (player) player.pauseVideo(); } catch (error) { /* ignore */ }
+        paint();
+      });
+      stage.append(button);
+    } else if (clip) {
+      stage.append(el("p", { class: "lyrics", text: clip.lyrics || "입력된 가사가 없습니다." }));
+    }
+    appendVeilToggle(stage);
+    appendCenterTitle(stage, clip);
+    return;
   }
+  appendVeilToggle(stage);
+  appendCenterTitle(stage, clip);
+}
+
+function appendCenterTitle(stage, clip) {
+  const id = pageId();
+  if (!clip || state.counting || sectionView(id).title !== "center") return;
+  if (id === "random" && state.randomPhase !== "play") return;
+  if (id === "guess" && !state.revealed) return;
+  if (id === "lyrics" && !state.lyricsShown) return;
+  const text = clip.gradeName ? clip.gradeName + " · " + clip.title : clip.title;
+  stage.append(el("p", { class: "random-title", text: text }));
+}
+
+function appendVeilToggle(stage) {
+  if (!sectionView(pageId()).veil) return;
+  stage.append(el("div", { class: "lyrics-tools is-inline" }, [videoToggleButton()]));
 }
 
 function videoToggleButton() {
+  const id = pageId();
   const button = el("button", {
     type: "button",
     class: "overlay-btn",
-    text: state.videoVisible ? "영상 가리기" : "영상 보이기"
+    text: veilChoice(id) ? "영상 가리기" : "영상 보이기"
   });
   button.addEventListener("click", () => {
-    state.videoVisible = !state.videoVisible;
+    state.veilChoice[id] = !veilChoice(id);
     paint();
   });
   return button;
@@ -1178,9 +1256,35 @@ async function uploadCue(file) {
   }
 }
 
+function viewBar(pageId) {
+  const view = sectionView(pageId);
+  const top = el("button", { type: "button", class: "ghost" + (view.title === "top" ? " is-on" : ""), text: "상단" });
+  const center = el("button", { type: "button", class: "ghost" + (view.title === "center" ? " is-on" : ""), text: "가운데" });
+  top.addEventListener("click", () => {
+    setSectionView(pageId, { title: "top" });
+    renderDesk();
+  });
+  center.addEventListener("click", () => {
+    setSectionView(pageId, { title: "center" });
+    renderDesk();
+  });
+  const veil = el("input", { type: "checkbox" });
+  veil.checked = view.veil;
+  veil.addEventListener("change", () => setSectionView(pageId, { veil: veil.checked }));
+  const label = el("label", { class: "view-veil" });
+  label.append(veil, document.createTextNode("영상 가리기"));
+  return el("div", { class: "view-bar" }, [
+    el("span", { class: "view-label", text: "제목 위치" }),
+    top,
+    center,
+    label
+  ]);
+}
+
 function pageBlock(page) {
   const block = el("section", { class: "desk-block" }, [
-    el("h2", { text: page.title })
+    el("h2", { text: page.title }),
+    viewBar(page.id)
   ]);
   if (page.id === "grade") {
     block.append(el("p", { class: "desk-note", text: "아래 칸에 학년, 영상, 시작, 끝을 입력하고 +를 누르면 한 곡이 추가됩니다. 순서는 왼쪽 핸들을 끌어 바꿉니다." }));
