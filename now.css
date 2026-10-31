@@ -261,7 +261,7 @@ body.is-open #veil { display: none; }
 }
 
 .seek {
-  --seek-thumb: 36px;
+  --seek-thumb: 18px;
   position: fixed;
   left: 366px;
   right: calc(18px + 3 * var(--ctrl) + 2 * var(--gap) + 16px);
@@ -323,8 +323,8 @@ body.is-open #veil { display: none; }
 
 .seek input[type="range"]::-webkit-slider-thumb {
   appearance: none;
-  width: 36px;
-  height: 36px;
+  width: 18px;
+  height: 18px;
   border: 0;
   border-radius: 50%;
   background: #c8c8c8;
@@ -339,8 +339,8 @@ body.is-open #veil { display: none; }
 }
 
 .seek input[type="range"]::-moz-range-thumb {
-  width: 36px;
-  height: 36px;
+  width: 18px;
+  height: 18px;
   border: 0;
   border-radius: 50%;
   background: #c8c8c8;
