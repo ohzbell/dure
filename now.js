@@ -1473,17 +1473,27 @@ function canvaEmbed(url) {
   const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
   const canva = host === "canva.com" || host === "canva.link" || host.endsWith(".canva.com") || host.endsWith(".canva.link");
   if (!canva) return "";
-  parsed.hash = "";
-  const path = parsed.pathname || "/";
-  const query = parsed.search || "";
-  return "https://" + parsed.hostname.toLowerCase() + path + query;
+  const path = (parsed.pathname || "/").replace(/\/$/, "");
+  if ((host === "canva.com" || host.endsWith(".canva.com")) && /^\/design\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?\/(?:view|watch)$/.test(path)) {
+    return "https://www.canva.com" + path.replace(/\/watch$/, "/view") + "?embed";
+  }
+  if (host === "canva.link" || host.endsWith(".canva.link")) {
+    return "https://" + parsed.hostname.toLowerCase() + (path || "/");
+  }
+  return "";
+}
+
+function canvaFrameUrl(url) {
+  const cleaned = canvaEmbed(url);
+  if (!cleaned || cleaned.indexOf("https://www.canva.com/design/") !== 0 || cleaned.slice(-6) !== "?embed") return "";
+  return cleaned;
 }
 
 function paintCanva() {
   const frame = document.getElementById("canva");
   if (!frame) return;
   const show = !state.desk && isSlide(pageId());
-  const url = show ? canvaEmbed(slideUrl(pageId())) : "";
+  const url = show ? canvaFrameUrl(slideUrl(pageId())) : "";
   if (!url) {
     frame.hidden = true;
     if (frame.getAttribute("src")) frame.removeAttribute("src");
