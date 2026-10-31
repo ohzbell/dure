@@ -1115,7 +1115,6 @@ function loginCard() {
 function editorCard() {
   const tabs = deskTabs();
   if (!tabs.some((tab) => tab.id === state.deskTab)) state.deskTab = "videos";
-  const current = tabs.find((tab) => tab.id === state.deskTab);
   const nav = el("nav", { class: "desk-nav", id: "desk-nav", "aria-label": "관리 섹션" });
   const movable = el("div", { class: "desk-page-tabs" });
   tabs.forEach((tab) => {
@@ -1132,19 +1131,18 @@ function editorCard() {
     const row = el("div", { class: "desk-tab-row" + (tab.fixed ? " is-fixed" : "") });
     row.setAttribute("data-id", tab.id);
     if (!tab.fixed) row.append(grip());
+    button.title = tab.title;
     row.append(button);
     (tab.fixed ? nav : movable).append(row);
   });
   nav.append(movable);
+  const foot = el("div", { class: "desk-nav-foot" }, [
+    el("a", { class: "text-link", href: "now.html", target: "_blank", rel: "noopener", text: "진행 화면" }),
+    el("button", { type: "button", class: "ghost", id: "logout", text: "로그아웃" })
+  ]);
+  nav.append(foot);
   enableTabDrag(movable);
   const main = el("div", { class: "desk-main" }, [
-    el("div", { class: "desk-head" }, [
-      el("h1", { text: current.title }),
-      el("div", { class: "actions" }, [
-        el("a", { class: "text-link", href: "now.html", target: "_blank", rel: "noopener", text: "진행 화면" }),
-        el("button", { type: "button", class: "ghost", id: "logout", text: "로그아웃" })
-      ])
-    ]),
     deskSection(state.deskTab)
   ]);
   return el("div", { class: "desk desk-app" }, [
