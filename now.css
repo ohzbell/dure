@@ -261,6 +261,7 @@ body.is-open #veil { display: none; }
 }
 
 .seek {
+  --seek-thumb: 36px;
   position: fixed;
   left: 366px;
   right: calc(18px + 3 * var(--ctrl) + 2 * var(--gap) + 16px);
@@ -284,9 +285,32 @@ body.is-open #veil { display: none; }
   text-align: center;
 }
 
+.seek-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.seek-mark {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--seek-thumb) / 2 + (100% - var(--seek-thumb)) * var(--mark, 0));
+  z-index: 1;
+  width: 2px;
+  height: 22px;
+  border-radius: 1px;
+  background: #fff;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.seek-mark[hidden] { display: none; }
+
 .seek input[type="range"] {
   flex: 1 1 auto;
-  width: auto;
+  width: 100%;
   height: 8px;
   margin: 0;
   border: 0;
@@ -1567,6 +1591,7 @@ body.watch-open { overflow: hidden; }
   .play-tip::after { left: 20px; }
   .side-tools { right: 8px; }
   .seek {
+    --seek-thumb: 26px;
     left: 10px;
     right: calc(8px + var(--ctrl) + 12px);
     bottom: calc(10px + var(--ctrl) + 8px);

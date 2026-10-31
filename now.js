@@ -3598,6 +3598,18 @@ function paintSeekFill(range) {
   range.style.background = "linear-gradient(90deg, #c8c8c8 " + pct + "%, rgba(200,200,200,0.28) " + pct + "%)";
 }
 
+function paintSeekMark(bounds) {
+  const mark = document.getElementById("seek-mark");
+  if (!mark) return;
+  const clip = currentClip();
+  const span = bounds.end - bounds.start;
+  const stop = clip && clip.end;
+  const show = pageId() === "lyrics" && stop != null && span > 0 && stop > bounds.start && stop < bounds.end - 0.25;
+  mark.hidden = !show;
+  if (!show) return;
+  mark.style.setProperty("--mark", String((stop - bounds.start) / span));
+}
+
 function paintSeek() {
   const bar = document.getElementById("seek");
   if (!bar) return;
@@ -3606,6 +3618,7 @@ function paintSeek() {
   if (!show) return;
   guardLyricsEnd();
   const bounds = clipBounds(currentClip());
+  paintSeekMark(bounds);
   const span = Math.max(0.01, bounds.end - bounds.start);
   if (seeking) return;
   let now = bounds.start;
