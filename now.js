@@ -47,6 +47,8 @@ let playerReady = Promise.resolve();
 let playGen = 0;
 let armEnd = false;
 let docKey = "";
+let ackedKey = "";
+let saveVersion = 0;
 let saveChain = Promise.resolve();
 let toastTimer = 0;
 let loginBusy = false;
@@ -254,14 +256,47 @@ async function request(method, body) {
   return doc;
 }
 
-function applyDoc(doc) {
+function docKeyFrom(doc) {
+  return JSON.stringify([
+    (doc.videos || []).map((video) => ({ id: video.id, title: video.title, url: video.url })),
+    doc.pages,
+    doc.grades,
+    !!doc.cueOff,
+    doc.tabOrder || [],
+    doc.playSeconds || null
+  ]);
+}
+
+function snapshotDoc() {
+  return {
+    op: "doc",
+    videos: state.doc.videos.map((video) => ({ id: video.id, title: video.title, url: video.url })),
+    cueOff: !!state.doc.cueOff,
+    pages: JSON.parse(JSON.stringify(state.doc.pages)),
+    grades: JSON.parse(JSON.stringify(state.doc.grades)),
+    tabOrder: (state.doc.tabOrder || []).slice(),
+    playSeconds: state.doc.playSeconds || null
+  };
+}
+
+function localDirty() {
+  if (!ackedKey) return false;
+  return docKeyFrom(snapshotDoc()) !== ackedKey;
+}
+
+function applyDoc(doc, force) {
+  if (!force && localDirty()) return;
   const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds]);
   const changed = key !== docKey;
   docKey = key;
-  if (!changed) return;
+  if (!changed) {
+    ackedKey = docKeyFrom(state.doc);
+    return;
+  }
   const keepId = pageOrder()[state.page] ? pageOrder()[state.page].id : "";
   const previous = currentClip();
   state.doc = doc;
+  ackedKey = docKeyFrom(state.doc);
   const kept = pageOrder().findIndex((page) => page.id === keepId);
   if (kept >= 0) state.page = kept;
   const clips = clipsForPage();
@@ -285,30 +320,62 @@ function applyDoc(doc) {
 }
 
 function queueSave() {
-  saveChain = saveChain.then(sendDoc, sendDoc);
+  const version = ++saveVersion;
+  const payload = snapshotDoc();
+  saveChain = saveChain.then(() => sendDoc(payload, version), () => sendDoc(payload, version));
   return saveChain;
 }
 
-async function sendDoc() {
+async function sendDoc(payload, version) {
   state.saving = true;
   try {
-    const doc = await request("POST", {
-      op: "doc",
-      videos: state.doc.videos,
-      cueOff: state.doc.cueOff,
-      pages: state.doc.pages,
-      grades: state.doc.grades,
-      tabOrder: state.doc.tabOrder || [],
-      playSeconds: state.doc.playSeconds || null
-    });
+    const doc = await request("POST", payload);
     state.saving = false;
-    applyDoc(doc);
+    if (version !== saveVersion) return true;
+    applyDoc(doc, true);
+    if (flushVideoEdits()) queueSave();
     return true;
   } catch (error) {
     state.saving = false;
-    toast("저장하지 못했습니다.");
+    if (version === saveVersion) toast("저장하지 못했습니다.");
     return false;
   }
+}
+
+function flushVideoEdits() {
+  let changed = false;
+  document.querySelectorAll(".video-row").forEach((row) => {
+    const current = state.doc.videos.find((item) => item.id === row.getAttribute("data-id"));
+    const inputs = row.querySelectorAll("input");
+    if (!current || inputs.length < 2) return;
+    const nextTitle = inputs[0].value.trim();
+    const nextUrl = inputs[1].value.trim();
+    if (!nextTitle || !youtubeId(nextUrl)) return;
+    if (current.title === nextTitle && current.url === nextUrl) return;
+    current.title = nextTitle;
+    current.url = nextUrl;
+    changed = true;
+  });
+  return changed;
+}
+
+function saveOnLeave() {
+  if (!state.admin || !state.endpoint || !state.key) return;
+  flushVideoEdits();
+  if (!localDirty()) return;
+  const body = JSON.stringify(snapshotDoc());
+  if (body.length > 60000) return;
+  try {
+    fetch(state.endpoint, {
+      method: "POST",
+      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Board-Key": state.key
+      },
+      body: body
+    });
+  } catch (error) { /* the page is already leaving */ }
 }
 
 function cueSrc() {
@@ -843,20 +910,25 @@ function videoBlock() {
     const title = el("input", { value: video.title, maxlength: "80", "aria-label": "영상 제목" });
     const url = el("input", { value: video.url, maxlength: "400", "aria-label": "유튜브 주소" });
     const save = () => {
+      const current = state.doc.videos.find((item) => item.id === video.id);
+      if (!current) return;
       const nextTitle = title.value.trim();
       const nextUrl = url.value.trim();
+      if (nextTitle === current.title && nextUrl === current.url) return;
       if (!nextTitle || !youtubeId(nextUrl)) {
         toast("영상 제목과 유튜브 주소를 확인해 주세요.");
-        title.value = video.title;
-        url.value = video.url;
+        title.value = current.title;
+        url.value = current.url;
         return;
       }
-      video.title = nextTitle;
-      video.url = nextUrl;
+      current.title = nextTitle;
+      current.url = nextUrl;
       queueSave();
     };
     title.addEventListener("change", save);
+    title.addEventListener("blur", () => window.setTimeout(save, 0));
     url.addEventListener("change", save);
+    url.addEventListener("blur", () => window.setTimeout(save, 0));
     const remove = el("button", { type: "button", class: "ghost mark", text: "−", "aria-label": "삭제" });
     remove.addEventListener("click", () => {
       if (!window.confirm("이 영상을 목록에서 지울까요?")) return;
@@ -870,7 +942,9 @@ function videoBlock() {
       queueSave();
       renderDesk();
     });
-    block.append(el("div", { class: "video-row" }, [title, url, remove]));
+    const row = el("div", { class: "video-row" }, [title, url, remove]);
+    row.setAttribute("data-id", video.id);
+    block.append(row);
   });
   const title = el("input", { id: "new-title", placeholder: "제목", maxlength: "80" });
   const url = el("input", { id: "new-url", placeholder: "유튜브 주소", maxlength: "400" });
@@ -1374,7 +1448,7 @@ async function submitLogin(event) {
 }
 
 async function refresh() {
-  if (state.saving || state.dragging || deskBusy()) return;
+  if (state.saving || state.dragging || deskBusy() || localDirty()) return;
   try {
     applyDoc(await request("GET"));
   } catch (error) { /* keep the screen up */ }
@@ -1504,6 +1578,7 @@ async function boot() {
     toast("저장된 목록을 불러오지 못했습니다.");
   }
   setInterval(() => { refresh(); }, 5000);
+  window.addEventListener("pagehide", saveOnLeave);
 }
 
 boot();
