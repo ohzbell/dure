@@ -27,6 +27,7 @@ const state = {
   revealed: false,
   lyricsShown: false,
   veilChoice: {},
+  titleChoice: {},
   listOpen: false,
   counting: false,
   randomPhase: "start",
@@ -825,7 +826,8 @@ function sectionView(id) {
   const veilDefault = id === "lyrics" || id === "random";
   return {
     title: saved && (saved.title === "center" || saved.title === "top") ? saved.title : titleDefault,
-    veil: saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault
+    veil: saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault,
+    titleHide: saved && typeof saved.titleHide === "boolean" ? saved.titleHide : false
   };
 }
 
@@ -834,7 +836,8 @@ function setSectionView(id, patch) {
   if (!state.doc.views || Array.isArray(state.doc.views)) state.doc.views = {};
   state.doc.views[id] = {
     title: patch.title || current.title,
-    veil: typeof patch.veil === "boolean" ? patch.veil : current.veil
+    veil: typeof patch.veil === "boolean" ? patch.veil : current.veil,
+    titleHide: typeof patch.titleHide === "boolean" ? patch.titleHide : current.titleHide
   };
   queueSave();
 }
@@ -842,6 +845,12 @@ function setSectionView(id, patch) {
 function veilChoice(id) {
   if (Object.prototype.hasOwnProperty.call(state.veilChoice, id)) return !!state.veilChoice[id];
   return id !== "lyrics";
+}
+
+function titleShown(id) {
+  if (!sectionView(id).titleHide) return true;
+  if (Object.prototype.hasOwnProperty.call(state.titleChoice, id)) return !!state.titleChoice[id];
+  return true;
 }
 
 function syncVeil() {
@@ -860,7 +869,7 @@ function syncVeil() {
 function subtitle() {
   const clip = currentClip();
   const id = pageId();
-  if (!clip || state.counting || sectionView(id).title !== "top") return "";
+  if (!clip || state.counting || !titleShown(id) || sectionView(id).title !== "top") return "";
   if (id === "random" && state.randomPhase !== "play") return "";
   if ((id === "guess" || id === "lyrics") && !(id === "guess" ? state.revealed : state.lyricsShown)) return "";
   if (clip.gradeName) return clip.gradeName + " · " + clip.title;
@@ -877,8 +886,10 @@ function stageKey() {
     revealed: state.revealed,
     lyricsShown: state.lyricsShown,
     video: veilChoice(pageId()),
+    titleShown: titleShown(pageId()),
     titlePlace: sectionView(pageId()).title,
     veil: sectionView(pageId()).veil,
+    titleHide: sectionView(pageId()).titleHide,
     counting: state.counting,
     random: state.randomPhase
   });
@@ -917,7 +928,7 @@ function paintStage() {
     return;
   }
   if (id === "random" && state.randomPhase === "play") {
-    appendVeilToggle(stage);
+    appendShowToggles(stage);
     appendCenterTitle(stage, clip);
     return;
   }
@@ -929,11 +940,11 @@ function paintStage() {
       playCurrent();
     });
     stage.append(button);
-    appendVeilToggle(stage);
+    appendShowToggles(stage);
     return;
   }
   if (id === "guess" && state.revealed) {
-    appendVeilToggle(stage);
+    appendShowToggles(stage);
     appendCenterTitle(stage, clip);
     return;
   }
@@ -949,17 +960,17 @@ function paintStage() {
     } else if (clip) {
       stage.append(el("p", { class: "lyrics", text: clip.lyrics || "입력된 가사가 없습니다." }));
     }
-    appendVeilToggle(stage);
+    appendShowToggles(stage);
     appendCenterTitle(stage, clip);
     return;
   }
-  appendVeilToggle(stage);
+  appendShowToggles(stage);
   appendCenterTitle(stage, clip);
 }
 
 function appendCenterTitle(stage, clip) {
   const id = pageId();
-  if (!clip || state.counting || sectionView(id).title !== "center") return;
+  if (!clip || state.counting || !titleShown(id) || sectionView(id).title !== "center") return;
   if (id === "random" && state.randomPhase !== "play") return;
   if (id === "guess" && !state.revealed) return;
   if (id === "lyrics" && !state.lyricsShown) return;
@@ -967,9 +978,13 @@ function appendCenterTitle(stage, clip) {
   stage.append(el("p", { class: "random-title", text: text }));
 }
 
-function appendVeilToggle(stage) {
-  if (!sectionView(pageId()).veil) return;
-  stage.append(el("div", { class: "lyrics-tools is-inline" }, [videoToggleButton()]));
+function appendShowToggles(stage) {
+  const view = sectionView(pageId());
+  const buttons = [];
+  if (view.veil) buttons.push(videoToggleButton());
+  if (view.titleHide) buttons.push(titleToggleButton());
+  if (!buttons.length) return;
+  stage.append(el("div", { class: "lyrics-tools is-inline" }, buttons));
 }
 
 function videoToggleButton() {
@@ -981,6 +996,20 @@ function videoToggleButton() {
   });
   button.addEventListener("click", () => {
     state.veilChoice[id] = !veilChoice(id);
+    paint();
+  });
+  return button;
+}
+
+function titleToggleButton() {
+  const id = pageId();
+  const button = el("button", {
+    type: "button",
+    class: "overlay-btn",
+    text: titleShown(id) ? "제목 가리기" : "제목 보이기"
+  });
+  button.addEventListener("click", () => {
+    state.titleChoice[id] = !titleShown(id);
     paint();
   });
   return button;
@@ -1271,13 +1300,19 @@ function viewBar(pageId) {
   const veil = el("input", { type: "checkbox" });
   veil.checked = view.veil;
   veil.addEventListener("change", () => setSectionView(pageId, { veil: veil.checked }));
-  const label = el("label", { class: "view-veil" });
-  label.append(veil, document.createTextNode("영상 가리기"));
+  const veilLabel = el("label", { class: "view-veil" });
+  veilLabel.append(veil, document.createTextNode("영상 가리기"));
+  const titleHide = el("input", { type: "checkbox" });
+  titleHide.checked = view.titleHide;
+  titleHide.addEventListener("change", () => setSectionView(pageId, { titleHide: titleHide.checked }));
+  const titleLabel = el("label", { class: "view-veil" });
+  titleLabel.append(titleHide, document.createTextNode("제목 가리기"));
   return el("div", { class: "view-bar" }, [
     el("span", { class: "view-label", text: "제목 위치" }),
     top,
     center,
-    label
+    veilLabel,
+    titleLabel
   ]);
 }
 
