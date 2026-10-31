@@ -190,7 +190,7 @@ body.is-open #veil { display: none; }
   bottom: calc(100% - 10px);
   z-index: 4;
   width: 28px;
-  height: 128px;
+  height: calc(128px * 2 / 3);
   margin: 0;
   border: 0;
   background: transparent;
