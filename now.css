@@ -682,6 +682,17 @@ body.is-desk #desk {
 
 #canva[hidden], body.is-desk #canva { display: none !important; }
 
+body.is-sermon #show { pointer-events: none; }
+
+body.is-sermon .show-top { background: none; }
+
+body.is-sermon #canva {
+  top: 104px;
+  bottom: 0;
+  height: calc(100vh - 104px);
+  pointer-events: auto;
+}
+
 body.is-sermon #page-title,
 body.is-sermon #page-sub,
 body.is-sermon .transport,
@@ -1551,4 +1562,8 @@ body.watch-open { overflow: hidden; }
   .birthday-names { font-size: clamp(30px, 4.6vw, 70px); }
   .scripture-body { font-size: clamp(24px, 3.4vw, 52px); }
   .sermon-empty { font-size: clamp(24px, 3.4vw, 46px); }
+  body.is-sermon #canva {
+    top: 68px;
+    height: calc(100vh - 68px);
+  }
 }

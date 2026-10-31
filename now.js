@@ -1463,15 +1463,20 @@ function sermonUrl() {
 function canvaEmbed(url) {
   const text = String(url || "").trim();
   if (!text) return "";
+  let parsed;
   try {
-    const parsed = new URL(text);
-    const host = parsed.hostname.replace(/^www\./, "");
-    if (host !== "canva.com") return "";
-    if (!/^\/design\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?\/(?:view|watch)\/?$/.test(parsed.pathname)) return "";
-    return "https://www.canva.com" + parsed.pathname.replace(/\/$/, "") + "?embed";
+    parsed = new URL(/^[a-z]+:/i.test(text) ? text : "https://" + text);
   } catch (error) {
     return "";
   }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+  const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+  const canva = host === "canva.com" || host === "canva.link" || host.endsWith(".canva.com") || host.endsWith(".canva.link");
+  if (!canva) return "";
+  parsed.hash = "";
+  const path = parsed.pathname || "/";
+  const query = parsed.search || "";
+  return "https://" + parsed.hostname.toLowerCase() + path + query;
 }
 
 function paintCanva() {
@@ -1594,7 +1599,7 @@ function richBox(label, html) {
 
 function sermonBlock() {
   const current = sermonUrl();
-  const input = el("input", { class: "wide-input", value: current, maxlength: "500", placeholder: "https://www.canva.com/design/…/view", "aria-label": "설교 URL" });
+  const input = el("input", { class: "wide-input", value: current, maxlength: "500", placeholder: "https://canva.link/…", "aria-label": "설교 URL" });
   input.addEventListener("change", () => {
     const next = input.value.trim();
     if (!next) {
@@ -2495,7 +2500,7 @@ function worshipBlock(page) {
     class: "wide-input",
     value: current,
     maxlength: "500",
-    placeholder: "https://www.canva.com/design/…/view",
+    placeholder: "https://canva.link/…",
     "aria-label": "캔바 URL"
   });
   input.addEventListener("change", () => {
