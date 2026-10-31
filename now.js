@@ -35,6 +35,7 @@ const state = {
   veilChoice: {},
   titleChoice: {},
   listOpen: false,
+  sectionsOpen: false,
   counting: false,
   finished: false,
   verse: "blank",
@@ -989,6 +990,7 @@ function setPage(index) {
 }
 
 function showPage(index) {
+  closeShowLists();
   stopCue();
   stopVideo();
   const pages = pageOrder();
@@ -1157,6 +1159,7 @@ function paint() {
     paintStage();
   }
   if (state.listOpen) paintList();
+  if (state.sectionsOpen) paintSections();
   paintPlayTip();
   paintCanva();
   if (!state.desk && !state.counting && !state.finished && page.id !== "sermon" && page.id !== "scripture") prepareClip(false);
@@ -1302,12 +1305,58 @@ function paintList() {
   });
 }
 
+function closeShowLists() {
+  state.listOpen = false;
+  state.sectionsOpen = false;
+  const playlist = document.getElementById("playlist");
+  const sections = document.getElementById("sections");
+  const listToggle = document.getElementById("list-toggle");
+  const sectionToggle = document.getElementById("section-toggle");
+  if (playlist) playlist.hidden = true;
+  if (sections) sections.hidden = true;
+  if (listToggle) listToggle.setAttribute("aria-expanded", "false");
+  if (sectionToggle) sectionToggle.setAttribute("aria-expanded", "false");
+}
+
 function toggleList() {
-  state.listOpen = !state.listOpen;
+  const open = !state.listOpen;
+  closeShowLists();
+  if (!open) return;
+  state.listOpen = true;
   const box = document.getElementById("playlist");
-  box.hidden = !state.listOpen;
-  document.getElementById("list-toggle").setAttribute("aria-expanded", state.listOpen ? "true" : "false");
-  if (state.listOpen) paintList();
+  box.hidden = false;
+  document.getElementById("list-toggle").setAttribute("aria-expanded", "true");
+  paintList();
+}
+
+function paintSections() {
+  const box = document.getElementById("sections");
+  const pages = pageOrder();
+  box.replaceChildren();
+  if (!pages.length) {
+    box.append(el("p", { class: "empty", text: "사용 중인 섹션이 없습니다." }));
+    return;
+  }
+  pages.forEach((page, index) => {
+    const button = el("button", {
+      type: "button",
+      class: "track" + (index === state.page ? " is-on" : ""),
+      text: page.title
+    });
+    button.addEventListener("click", () => setPage(index));
+    box.append(button);
+  });
+}
+
+function toggleSections() {
+  const open = !state.sectionsOpen;
+  closeShowLists();
+  if (!open) return;
+  state.sectionsOpen = true;
+  const box = document.getElementById("sections");
+  box.hidden = false;
+  document.getElementById("section-toggle").setAttribute("aria-expanded", "true");
+  paintSections();
 }
 
 function deskBusy() {
@@ -3245,14 +3294,18 @@ function bindShow() {
   });
   seekTimer = window.setInterval(paintSeek, 250);
   document.getElementById("list-toggle").addEventListener("click", toggleList);
+  document.getElementById("section-toggle").addEventListener("click", toggleSections);
   document.addEventListener("pointerdown", (event) => {
-    if (!state.listOpen || state.desk) return;
-    const box = document.getElementById("playlist");
-    const toggle = document.getElementById("list-toggle");
-    if ((box && box.contains(event.target)) || (toggle && toggle.contains(event.target))) return;
-    state.listOpen = false;
-    if (box) box.hidden = true;
-    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    if (state.desk || (!state.listOpen && !state.sectionsOpen)) return;
+    const playlist = document.getElementById("playlist");
+    const sections = document.getElementById("sections");
+    const listToggle = document.getElementById("list-toggle");
+    const sectionToggle = document.getElementById("section-toggle");
+    if (playlist && playlist.contains(event.target)) return;
+    if (sections && sections.contains(event.target)) return;
+    if (listToggle && listToggle.contains(event.target)) return;
+    if (sectionToggle && sectionToggle.contains(event.target)) return;
+    closeShowLists();
   });
   document.addEventListener("keydown", (event) => {
     if (state.desk) return;

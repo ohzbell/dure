@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="color-scheme" content="dark">
   <title>찬양 진행</title>
-  <link rel="stylesheet" href="now.css?v=53">
+  <link rel="stylesheet" href="now.css?v=54">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"></noscript>
 </head>
@@ -36,6 +36,9 @@
       <button class="icon-btn" type="button" id="next-track" aria-label="다음 곡">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5v13l9-6.5z"></path><path d="M17 5.5v13"></path></svg>
       </button>
+      <button class="list-toggle icon-btn" type="button" id="list-toggle" aria-expanded="false" aria-label="영상 리스트">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14"></path><path d="M5 12h14"></path><path d="M5 17h14"></path></svg>
+      </button>
     </div>
     <div class="seek" id="seek" hidden>
       <span class="seek-time" id="seek-time">0:00</span>
@@ -46,14 +49,15 @@
       <a class="admin-jump icon-btn" href="now.html?desk=1" target="_blank" rel="noopener" aria-label="관리자">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="14.5" r="3.2"></circle><path d="M10.4 13.1 20 5.2"></path><path d="M16.2 7.6 18.4 9.8"></path><path d="M13.6 10 15.8 12.2"></path></svg>
       </a>
-      <button class="list-toggle icon-btn" type="button" id="list-toggle" aria-expanded="false" aria-label="영상 리스트">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14"></path><path d="M5 12h14"></path><path d="M5 17h14"></path></svg>
+      <button class="icon-btn" type="button" id="section-toggle" aria-expanded="false" aria-label="섹션 목록">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="7" r="1.4"></circle><circle cx="5" cy="12" r="1.4"></circle><circle cx="5" cy="17" r="1.4"></circle><path d="M9 7h11"></path><path d="M9 12h11"></path><path d="M9 17h11"></path></svg>
       </button>
     </div>
     <aside id="playlist" hidden></aside>
+    <aside id="sections" hidden></aside>
   </div>
   <main id="desk" hidden></main>
   <audio id="cue" preload="auto" src="live-beep.wav?v=5"></audio>
-  <script src="now.js?v=59"></script>
+  <script src="now.js?v=60"></script>
 </body>
 </html>

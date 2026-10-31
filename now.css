@@ -7,6 +7,13 @@ html, body {
   overflow: hidden;
 }
 
+html:has(body.is-desk),
+body.is-desk {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+}
+
 button, a, input, textarea { font-family: inherit; }
 
 #player-mount {
@@ -203,7 +210,7 @@ body.is-open #veil { display: none; }
 
 .seek {
   position: fixed;
-  left: 270px;
+  left: 352px;
   right: 190px;
   bottom: 34px;
   z-index: 6;
@@ -264,7 +271,7 @@ body.is-open #veil { display: none; }
   cursor: grab;
 }
 
-#playlist {
+#playlist, #sections {
   position: fixed;
   right: 28px;
   bottom: 108px;
@@ -278,7 +285,11 @@ body.is-open #veil { display: none; }
   background: rgba(0, 0, 0, 0.9);
 }
 
-#playlist[hidden] { display: none; }
+#playlist[hidden], #sections[hidden] { display: none; }
+
+#sections { width: min(420px, calc(100vw - 56px)); }
+
+#section-toggle circle { fill: currentColor; stroke: none; }
 
 .track, .grade-label, .empty {
   margin: 0;
@@ -304,6 +315,7 @@ body.is-open #veil { display: none; }
   font-weight: 700;
   text-align: left;
   cursor: pointer;
+  word-break: keep-all;
 }
 
 .track small {
@@ -659,7 +671,8 @@ body.is-scripture #list-toggle,
 body.is-scripture #playlist,
 body.is-scripture .play-tip,
 body.is-birthday #list-toggle,
-body.is-birthday #playlist { display: none !important; }
+body.is-birthday #playlist,
+body.is-sermon #sections { display: none !important; }
 
 .sermon-empty {
   position: fixed;
@@ -1024,7 +1037,7 @@ textarea { min-height: 96px; resize: vertical; }
   padding-top: 18px;
 }
 
-.line input, .adder input, .video-row input { flex: 1 1 140px; width: auto; }
+.line input, .adder input, .video-row input { flex: 1 1 140px; width: auto; min-width: 0; max-width: 100%; }
 .adder .time, .clip .time, .grade-row .time { flex: 0 0 88px; width: 88px; }
 .adder .time, .adder .mark { position: relative; z-index: 7; }
 
@@ -1358,19 +1371,80 @@ body.watch-open { overflow: hidden; }
   .titles { min-height: 48px; }
   .nav { width: 48px; height: 48px; font-size: 36px; }
   .nav svg { width: 22px; height: 22px; }
-  .icon-btn { width: 48px; height: 48px; }
-  .icon-btn svg { width: 22px; height: 22px; }
+  .icon-btn { width: 44px; height: 44px; }
+  .icon-btn svg { width: 20px; height: 20px; }
   .transport, .side-tools { bottom: 10px; gap: 6px; }
   .transport { left: 8px; }
   .play-tip { font-size: 13px; padding: 7px 10px; }
-  .play-tip::after { left: 24px; }
+  .play-tip::after { left: 22px; }
   .side-tools { right: 8px; }
-  .seek { left: 168px; right: 120px; bottom: 14px; gap: 8px; }
-  .seek-time { font-size: 14px; }
+  .seek {
+    left: 10px;
+    right: 10px;
+    bottom: 62px;
+    height: 34px;
+    gap: 8px;
+  }
+  .seek-time { min-width: 3.2em; font-size: 13px; }
   .seek input[type="range"]::-webkit-slider-thumb,
-  .seek input[type="range"]::-moz-range-thumb { width: 28px; height: 28px; }
-  #playlist { bottom: 68px; }
-  .lyrics-tools { bottom: 68px; width: calc(100% - 24px); }
+  .seek input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; }
+  #playlist, #sections {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    bottom: 108px;
+    max-height: min(48vh, 420px);
+  }
+  .track { font-size: 18px; padding: 12px 14px; }
+  .grade-label, .empty { font-size: 16px; }
+  .lyrics-tools { bottom: 108px; width: calc(100% - 24px); }
+  .scripture-bar { bottom: 66px; width: calc(100% - 16px); }
+  .scripture-bar button { min-width: 72px; min-height: 44px; font-size: 15px; padding: 0 8px; }
+  .video-row,
+  .line,
+  .adder,
+  .clip,
+  .grade-row,
+  .month-row,
+  .account-row,
+  .account-add,
+  .play-span {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .grade-row { flex-wrap: wrap; }
+  .video-row input,
+  .line input,
+  .adder input,
+  .clip input,
+  .clip .grow,
+  .account-row input,
+  .account-add input,
+  .account-row .secret,
+  .account-add .secret,
+  .play-span,
+  .play-span .time,
+  .month-row input:not([type="radio"]),
+  .grade-row .grade-name,
+  .grade-row .suggest,
+  .grade-row .grow,
+  .video-no {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .desk .video-row button,
+  .desk .line button,
+  .desk .adder button,
+  .desk .clip button,
+  .desk .account-row button,
+  .desk .account-add button,
+  .desk .play-span button,
+  .desk .grade-row .grade-delete {
+    align-self: flex-start;
+  }
+  .desk-main, .desk-block { max-width: 100%; }
   .lyrics-tools.is-inline { width: max-content; }
   .overlay-btn { flex: 1; min-width: 0; min-height: 44px; font-size: 16px; }
   .lyrics-tools.is-inline .overlay-btn { flex: 0 0 auto; width: auto; }
