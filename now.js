@@ -1495,7 +1495,7 @@ function paintCanva() {
 
 function paintScripture(stage) {
   const round = selectedRound();
-  const body = el("div", { class: "scripture-body" });
+  const body = el("div", { class: "scripture-body" + (state.verse === "words" ? " is-words" : "") });
   const field = state.verse === "korean" ? "korean" : state.verse === "english" ? "english" : state.verse === "words" ? "words" : "";
   if (round && field) body.innerHTML = safeHtml(round[field] || "");
   const bar = el("div", { class: "scripture-bar" });

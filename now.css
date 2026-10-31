@@ -776,7 +776,7 @@ body.is-sermon #sections { display: none !important; }
   overflow: auto;
   transform: translate(-50%, -50%);
   color: #fff;
-  font-size: clamp(28px, 4vw, 64px);
+  font-size: clamp(22.4px, 3.2vw, 51.2px);
   font-weight: 700;
   line-height: 1.35;
   text-align: center;
@@ -784,6 +784,8 @@ body.is-sermon #sections { display: none !important; }
   overflow-wrap: anywhere;
   text-shadow: 0 4px 24px #000;
 }
+
+.scripture-body.is-words { text-align: left; }
 
 .scripture-bar {
   position: fixed;
@@ -1578,7 +1580,7 @@ body.watch-open { overflow: hidden; }
   .answer { font-size: clamp(54px, 7.6vw, 124px); }
   .finish-show { font-size: clamp(60px, 8.4vw, 148px); }
   .birthday-names { font-size: clamp(30px, 4.6vw, 70px); }
-  .scripture-body { font-size: clamp(24px, 3.4vw, 52px); }
+  .scripture-body { font-size: clamp(19.2px, 2.72vw, 41.6px); }
   .sermon-empty { font-size: clamp(24px, 3.4vw, 46px); }
   body.is-sermon #canva {
     top: 68px;
