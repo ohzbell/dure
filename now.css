@@ -144,6 +144,50 @@ body.is-open #veil { display: none; }
 .transport { left: 18px; }
 .side-tools { right: 18px; }
 
+.play-tip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 14px);
+  z-index: 2;
+  margin: 0;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  animation: play-tip-in 0.28s ease, play-tip-bob 1.7s ease-in-out 0.28s infinite;
+}
+
+.play-tip::after {
+  content: "";
+  position: absolute;
+  left: 36px;
+  bottom: -7px;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: #fff;
+  border-bottom: 0;
+}
+
+.play-tip[hidden] { display: none; }
+
+@keyframes play-tip-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes play-tip-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+
 .seek {
   position: fixed;
   left: 270px;
@@ -903,6 +947,8 @@ body.watch-open { overflow: hidden; }
   .icon-btn svg { width: 22px; height: 22px; }
   .transport, .side-tools { bottom: 10px; gap: 6px; }
   .transport { left: 8px; }
+  .play-tip { font-size: 13px; padding: 7px 10px; }
+  .play-tip::after { left: 24px; }
   .side-tools { right: 8px; }
   .seek { left: 168px; right: 120px; bottom: 14px; gap: 8px; }
   .seek-time { font-size: 14px; }

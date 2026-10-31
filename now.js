@@ -645,6 +645,9 @@ function playCurrent() {
     return;
   }
   if (pageId() === "guess" && !state.revealed) return;
+  const clipId = clip.clipId;
+  state.startedKey = pageId() + ":" + clipId;
+  paintPlayTip();
   if (state.lyricsShown) {
     state.lyricsShown = false;
     paint();
@@ -909,6 +912,7 @@ function paint() {
     paintStage();
   }
   if (state.listOpen) paintList();
+  paintPlayTip();
   if (!state.desk && !state.counting) prepareClip(false);
 }
 
@@ -2091,6 +2095,20 @@ function seekRatio(ratio) {
   paintSeekFill(document.getElementById("seek-range"));
 }
 
+function paintPlayTip() {
+  const tip = document.getElementById("play-tip");
+  if (!tip) return;
+  tip.hidden = !playNeedsButton();
+}
+
+function playNeedsButton() {
+  const clip = currentClip();
+  const id = pageId();
+  if (!clip || state.desk || state.counting) return false;
+  if (id === "random" || id === "guess") return false;
+  return state.startedKey !== id + ":" + clip.clipId;
+}
+
 function playbackBlocked() {
   if (pageId() === "random" && state.randomPhase !== "play") return true;
   if (pageId() === "guess" && !state.revealed) return true;
@@ -2118,6 +2136,7 @@ function bindShow() {
   document.getElementById("page-prev").addEventListener("click", () => setPage(state.page - 1));
   document.getElementById("page-next").addEventListener("click", goNextPage);
   document.getElementById("play").addEventListener("click", resumePlay);
+  document.getElementById("play-tip").addEventListener("click", resumePlay);
   document.getElementById("pause").addEventListener("click", pausePlay);
   document.getElementById("next-track").addEventListener("click", nextTrack);
   const range = document.getElementById("seek-range");
