@@ -3692,6 +3692,14 @@ function paintVolume() {
   button.setAttribute("aria-label", muted ? "소리" : "음소거");
 }
 
+function nudgeVolume(delta) {
+  if (delta > 0) state.muted = false;
+  state.volume = Math.max(0, Math.min(100, Math.round(state.volume) + delta));
+  if (state.volume <= 0) state.muted = true;
+  applyVolume();
+  paintVolume();
+}
+
 function toggleMute() {
   const muted = state.muted || state.volume <= 0;
   if (muted) {
@@ -3766,6 +3774,10 @@ function bindShow() {
     if (typing || tag === "INPUT") return;
     if (event.key === "ArrowLeft") setPage(state.page - 1);
     if (event.key === "ArrowRight") goNextPage();
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      nudgeVolume(event.key === "ArrowUp" ? 5 : -5);
+    }
   });
 }
 
