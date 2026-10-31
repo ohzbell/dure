@@ -447,12 +447,20 @@ function hush(item) {
   try { if (item) item.mute(); } catch (error) { /* not ready */ }
 }
 
+function outputVolume() {
+  return pageId() === "guess" && state.revealed ? 30 : 100;
+}
+
 function speak(item) {
   try {
     if (!item) return;
     item.unMute();
-    item.setVolume(100);
+    item.setVolume(outputVolume());
   } catch (error) { /* not ready */ }
+}
+
+function applyVolume() {
+  speak(player);
 }
 
 function ensurePlayer() {
@@ -603,7 +611,7 @@ function loadClip(clip, autoplay) {
   syncVeil();
 }
 
-function prepareClip(autoplay) {
+function prepareClip(autoplay, attempt) {
   if (state.desk || state.counting) return;
   const clip = currentClip();
   if (!clip) return;
@@ -614,6 +622,14 @@ function prepareClip(autoplay) {
     if (!now || now.clipId !== clip.clipId) return;
     const code = playerCode();
     const ready = state.loadedId === clip.clipId && !state.needRestart;
+    const preloaded = standby && standbyClipId === clip.clipId && standbyReady;
+    if (!ready && !preloaded && (code === 1 || code === 3) && (attempt || 0) < 20) {
+      try { if (player && player.stopVideo) player.stopVideo(); } catch (error) { /* already stopping */ }
+      window.setTimeout(() => {
+        if (gen === prepareGen) prepareClip(autoplay, (attempt || 0) + 1);
+      }, 150);
+      return;
+    }
     if (ready && autoplay && (code === 1 || code === 3)) {
       syncVeil();
       primeNext();
@@ -644,7 +660,6 @@ function playCurrent() {
     toast("이 화면에 넣은 영상이 없습니다.");
     return;
   }
-  if (pageId() === "guess" && !state.revealed) return;
   const clipId = clip.clipId;
   state.startedKey = pageId() + ":" + clipId;
   paintPlayTip();
@@ -826,7 +841,7 @@ function sectionView(id) {
   const views = state.doc.views;
   const saved = views && !Array.isArray(views) ? views[id] : null;
   const titleDefault = id === "random" || id === "guess" ? "center" : "top";
-  const veilDefault = id === "lyrics" || id === "random";
+  const veilDefault = id === "lyrics" || id === "random" || id === "guess";
   return {
     title: saved && (saved.title === "center" || saved.title === "top") ? saved.title : titleDefault,
     veil: saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault,
@@ -847,7 +862,7 @@ function setSectionView(id, patch) {
 
 function veilChoice(id) {
   if (Object.prototype.hasOwnProperty.call(state.veilChoice, id)) return !!state.veilChoice[id];
-  return id !== "lyrics";
+  return id !== "lyrics" && id !== "guess";
 }
 
 function titleShown(id) {
@@ -862,7 +877,6 @@ function syncVeil() {
   let open = false;
   if (clip && !state.counting && !state.desk && state.loadedId === clip.clipId) {
     if (id === "random" && state.randomPhase !== "play") open = false;
-    else if (id === "guess" && !state.revealed) open = false;
     else if (sectionView(id).veil) open = veilChoice(id);
     else open = true;
   }
@@ -940,8 +954,8 @@ function paintStage() {
     const button = el("button", { type: "button", class: "answer", text: "정답" });
     button.addEventListener("click", () => {
       state.revealed = true;
+      applyVolume();
       paint();
-      playCurrent();
     });
     stage.append(button);
     appendShowToggles(stage);
@@ -2051,7 +2065,6 @@ function seekVisible() {
   const clip = currentClip();
   if (!clip || state.desk || state.counting || state.loadedId !== clip.clipId) return false;
   if (pageId() === "random" && state.randomPhase !== "play") return false;
-  if (pageId() === "guess" && !state.revealed) return false;
   return true;
 }
 
@@ -2105,13 +2118,12 @@ function playNeedsButton() {
   const clip = currentClip();
   const id = pageId();
   if (!clip || state.desk || state.counting) return false;
-  if (id === "random" || id === "guess") return false;
+  if (id === "random") return false;
   return state.startedKey !== id + ":" + clip.clipId;
 }
 
 function playbackBlocked() {
   if (pageId() === "random" && state.randomPhase !== "play") return true;
-  if (pageId() === "guess" && !state.revealed) return true;
   return !currentClip();
 }
 
@@ -2124,7 +2136,7 @@ function resumePlay() {
   const code = playerCode();
   const same = state.loadedId === currentClip().clipId;
   if (same && code === 1) return;
-  state.needRestart = !(same && code === 2);
+  state.needRestart = !(same && (code === 2 || code === 5));
   playCurrent();
 }
 
