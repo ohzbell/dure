@@ -785,7 +785,10 @@ body.is-sermon #sections { display: none !important; }
   text-shadow: 0 4px 24px #000;
 }
 
-.scripture-body.is-words { text-align: left; }
+.scripture-body.is-words {
+  width: 70vw;
+  text-align: left;
+}
 
 .scripture-bar {
   position: fixed;
