@@ -21,7 +21,8 @@ const PAGES = [
 const FEATURES = [
   { id: "scripture", title: "말씀암송" },
   { id: "sermon", title: "설교" },
-  { id: "birthday", title: "생일축하" }
+  { id: "birthday", title: "생일축하" },
+  { id: "board", title: "화면 입력" }
 ];
 
 const PAGE_LISTS = ["random", "teacher", "guess", "lyrics", "popular", "final"];
@@ -76,6 +77,7 @@ let ackedKey = "";
 let saveVersion = 0;
 let saveChain = Promise.resolve();
 let toastTimer = 0;
+let boardTimer = 0;
 let loginBusy = false;
 let shownKey = "";
 let markTimers = [];
@@ -109,7 +111,9 @@ function emptyDoc() {
     birthday: { video: "", month: 1, names: ["", "", "", "", "", "", "", "", "", "", "", ""] },
     scripture: { selected: "", rounds: [] },
     playSeconds: null,
-    views: {}
+    views: {},
+    hidden: [],
+    board: { text: "", size: "normal", color: "#ffffff", mode: "plain", sent: null }
   };
 }
 
@@ -204,9 +208,26 @@ function pageTitle(page) {
   return page.title;
 }
 
-function catalog() {
+function sectionPool() {
   const gone = new Set(Array.isArray(state.doc.removed) ? state.doc.removed : []);
   return basePages().concat(FEATURES).filter((page) => !gone.has(page.id));
+}
+
+function catalog() {
+  const hidden = new Set(Array.isArray(state.doc.hidden) ? state.doc.hidden : []);
+  return sectionPool().filter((page) => !hidden.has(page.id));
+}
+
+function sectionRecord(id) {
+  return (state.doc.sections || []).find((section) => section.id === id) || null;
+}
+
+function pageKind(id) {
+  if (PAGES.some((page) => page.id === id) || FEATURES.some((page) => page.id === id)) return id;
+  const section = sectionRecord(id);
+  const kind = section && section.kind;
+  if (kind === "lyrics" || kind === "guess" || kind === "random" || kind === "sermon" || kind === "board") return kind;
+  return "list";
 }
 
 function placement() {
@@ -229,7 +250,10 @@ function placement() {
     inactive = inactive.filter((id) => !seen.has(id));
     inactive.forEach((id) => seen.add(id));
     ids.forEach((id) => {
-      if (!seen.has(id)) active.push(id);
+      if (!seen.has(id)) {
+        if (id === "board") inactive.push(id);
+        else active.push(id);
+      }
     });
   }
   return { active: active, inactive: inactive };
@@ -260,6 +284,7 @@ function findVideo(id) {
 
 function clipsForPage() {
   const id = pageId();
+  const kind = pageKind(id);
   if (id === "birthday") {
     const video = birthdayDoc().video;
     if (!youtubeId(video)) return [];
@@ -274,7 +299,7 @@ function clipsForPage() {
       gradeId: ""
     }];
   }
-  if (id === "sermon" || id === "scripture") return [];
+  if (kind === "sermon" || kind === "scripture" || kind === "board") return [];
   if (id === "grade") {
     const rows = [];
     state.doc.grades.forEach((grade) => {
@@ -386,7 +411,9 @@ function docKeyFrom(doc) {
     doc.removed || [],
     doc.sermon || {},
     doc.birthday || {},
-    doc.scripture || {}
+    doc.scripture || {},
+    doc.hidden || [],
+    doc.board || {}
   ]);
 }
 
@@ -407,7 +434,9 @@ function snapshotDoc() {
     removed: Array.isArray(state.doc.removed) ? state.doc.removed.slice() : [],
     sermon: { url: (state.doc.sermon && state.doc.sermon.url) || "" },
     birthday: birthdayDoc(),
-    scripture: scriptureDoc()
+    scripture: scriptureDoc(),
+    hidden: Array.isArray(state.doc.hidden) ? state.doc.hidden.slice() : [],
+    board: boardPayload(state.doc.board)
   };
 }
 
@@ -423,7 +452,7 @@ function clipMediaChanged(previous, next) {
 
 function applyDoc(doc, force, holdClip) {
   if (!force && localDirty()) return;
-  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds, doc.views, doc.sections, doc.names, doc.active, doc.inactive, doc.removed, doc.sermon, doc.birthday, doc.scripture]);
+  const key = JSON.stringify([doc.videos, doc.pages, doc.grades, doc.cueOff, doc.cueRev, doc.cueName, doc.cueCustom, doc.tabOrder, doc.playSeconds, doc.views, doc.sections, doc.names, doc.active, doc.inactive, doc.removed, doc.hidden, doc.sermon, doc.birthday, doc.scripture, doc.board]);
   const changed = key !== docKey;
   docKey = key;
   if (!changed) {
@@ -435,6 +464,7 @@ function applyDoc(doc, force, holdClip) {
   state.doc = doc;
   if (!Array.isArray(state.doc.sections)) state.doc.sections = [];
   if (!Array.isArray(state.doc.removed)) state.doc.removed = [];
+  if (!Array.isArray(state.doc.hidden)) state.doc.hidden = [];
   if (!state.doc.names || Array.isArray(state.doc.names)) state.doc.names = {};
   state.doc.sections.forEach((section) => {
     if (!Array.isArray(state.doc.pages[section.id])) state.doc.pages[section.id] = [];
@@ -450,7 +480,7 @@ function applyDoc(doc, force, holdClip) {
     state.lyricsShown = false;
     state.finished = false;
     state.verse = "blank";
-    if (pageId() === "random") state.randomPhase = "start";
+    if (pageKind(pageId()) === "random") state.randomPhase = "start";
     stopVideo();
   }
   const clips = clipsForPage();
@@ -741,14 +771,14 @@ function showFinish() {
   stopCue();
   stopVideo();
   state.finished = true;
-  if (pageId() === "random") state.randomPhase = "finish";
+  if (pageKind(pageId()) === "random") state.randomPhase = "finish";
   paint();
 }
 
 function clipArgs(clip) {
   const id = youtubeId(clip.url);
   if (!id) return null;
-  if (pageId() === "lyrics") return { videoId: id, startSeconds: clip.start || 0 };
+  if (pageKind(pageId()) === "lyrics") return { videoId: id, startSeconds: clip.start || 0 };
   const playing = currentClip();
   const keepGoing = !!playing && clip.clipId === playing.clipId && state.releaseEnd;
   const args = { videoId: id, startSeconds: keepGoing && clip.end != null ? clip.end : (clip.start || 0) };
@@ -991,7 +1021,7 @@ function prevTrack() {
     toast("이 화면에 넣은 영상이 없습니다.");
     return;
   }
-  const random = pageId() === "random";
+  const random = pageKind(pageId()) === "random";
   if (random && state.randomPhase !== "play" && !state.finished) {
     stopVideo();
     stopCue();
@@ -1006,7 +1036,7 @@ function nextTrack() {
     toast("이 화면에 넣은 영상이 없습니다.");
     return;
   }
-  const random = pageId() === "random";
+  const random = pageKind(pageId()) === "random";
   if (random && state.randomPhase !== "play") {
     stopVideo();
     stopCue();
@@ -1039,7 +1069,7 @@ function jumpTo(index) {
   state.lyricsShown = false;
   state.finished = false;
   state.needRestart = true;
-  if (pageId() === "random") {
+  if (pageKind(pageId()) === "random") {
     state.randomPhase = "play";
     paint();
     playCurrent();
@@ -1107,7 +1137,7 @@ function showPage(index) {
   state.lyricsShown = false;
   state.finished = false;
   state.verse = "blank";
-  if (pages[state.page].id === "random") state.randomPhase = "start";
+  if (pages[state.page] && pageKind(pages[state.page].id) === "random") state.randomPhase = "start";
   history.replaceState(null, "", "#" + pages[state.page].id);
   paint();
 }
@@ -1115,13 +1145,14 @@ function showPage(index) {
 function sectionView(id) {
   const views = state.doc.views;
   const saved = views && !Array.isArray(views) ? views[id] : null;
-  const titleDefault = id === "random" || id === "guess" ? "center" : "top";
-  const veilDefault = id === "lyrics" || id === "random" || id === "guess";
+  const kind = pageKind(id);
+  const titleDefault = kind === "random" || kind === "guess" ? "center" : "top";
+  const veilDefault = kind === "lyrics" || kind === "random" || kind === "guess";
   const titleHide = saved && typeof saved.titleHide === "boolean" ? saved.titleHide : false;
   const veil = saved && typeof saved.veil === "boolean" ? saved.veil : veilDefault;
-  const veilShown = saved && typeof saved.veilShown === "boolean" ? saved.veilShown : id !== "lyrics" && id !== "guess";
+  const veilShown = saved && typeof saved.veilShown === "boolean" ? saved.veilShown : kind !== "lyrics" && kind !== "guess";
   return {
-    title: id === "lyrics"
+    title: kind === "lyrics"
       ? "top"
       : (saved && (saved.title === "center" || saved.title === "top") ? saved.title : titleDefault),
     veil: veil,
@@ -1165,18 +1196,19 @@ function titleShown(id) {
 
 function syncVeil() {
   const id = pageId();
-  if (!state.desk && id === "birthday") {
+  const kind = pageKind(id);
+  if (!state.desk && kind === "birthday") {
     document.body.classList.add("is-open");
     return;
   }
-  if (id === "sermon" || id === "scripture") {
+  if (kind === "sermon" || kind === "scripture" || kind === "board") {
     document.body.classList.remove("is-open");
     return;
   }
   const clip = currentClip();
   let open = false;
   if (clip && !state.counting && !state.desk && state.loadedId === clip.clipId) {
-    if (id === "random" && state.randomPhase !== "play") open = false;
+    if (kind === "random" && state.randomPhase !== "play") open = false;
     else if (sectionView(id).videoButton) open = veilChoice(id);
     else open = sectionView(id).videoShow;
   }
@@ -1187,10 +1219,11 @@ function subtitle() {
   if (state.finished) return "";
   const clip = currentClip();
   const id = pageId();
-  if (id === "sermon" || id === "birthday" || id === "scripture") return "";
+  const kind = pageKind(id);
+  if (kind === "sermon" || kind === "birthday" || kind === "scripture" || kind === "board") return "";
   if (!clip || state.counting || !titleShown(id) || sectionView(id).title !== "top") return "";
-  if (id === "random" && state.randomPhase !== "play") return "";
-  if ((id === "guess" || id === "lyrics") && !(id === "guess" ? state.revealed : state.lyricsShown)) return "";
+  if (kind === "random" && state.randomPhase !== "play") return "";
+  if ((kind === "guess" || kind === "lyrics") && !(kind === "guess" ? state.revealed : state.lyricsShown)) return "";
   return clip.title;
 }
 
@@ -1231,13 +1264,15 @@ function stageKey() {
     sermon: state.doc.sermon && state.doc.sermon.url,
     birthday: state.doc.birthday,
     scripture: state.doc.scripture,
+    board: pageKind(pageId()) === "board" ? boardStore(pageId()).sent : null,
     random: state.randomPhase
   });
 }
 
 function clipCountLabel() {
   const id = pageId();
-  if (!id || id === "sermon" || id === "birthday" || id === "scripture") return "";
+  const kind = pageKind(id);
+  if (!id || kind === "sermon" || kind === "birthday" || kind === "scripture" || kind === "board") return "";
   const total = clipsForPage().length;
   if (!total) return "";
   const current = Math.min(Math.max(state.clip, 0), total - 1) + 1;
@@ -1245,18 +1280,22 @@ function clipCountLabel() {
 }
 
 function visibleTitle(page) {
-  if (!page || page.id === "sermon") return "";
-  if (page.id === "birthday") return birthdayDoc().month + "월 생일 축하합니다!";
-  if (page.id === "scripture") return "말씀암송";
+  if (!page) return "";
+  const kind = pageKind(page.id);
+  if (kind === "sermon" || kind === "board") return "";
+  if (kind === "birthday") return birthdayDoc().month + "월 생일 축하합니다!";
+  if (kind === "scripture") return "말씀암송";
   return page.title;
 }
 
 function paint() {
   const page = pageOrder()[state.page];
-  document.body.classList.toggle("is-sermon", !state.desk && !!page && page.id === "sermon");
-  document.body.classList.toggle("is-birthday", !state.desk && !!page && page.id === "birthday");
-  document.body.classList.toggle("is-scripture", !state.desk && !!page && page.id === "scripture");
-  const videoPage = !!page && page.id !== "sermon" && page.id !== "scripture" && page.id !== "birthday";
+  const kind = page ? pageKind(page.id) : "";
+  document.body.classList.toggle("is-sermon", !state.desk && kind === "sermon");
+  document.body.classList.toggle("is-birthday", !state.desk && kind === "birthday");
+  document.body.classList.toggle("is-scripture", !state.desk && kind === "scripture");
+  document.body.classList.toggle("is-board", !state.desk && kind === "board");
+  const videoPage = !!page && kind !== "sermon" && kind !== "scripture" && kind !== "birthday" && kind !== "board";
   document.body.classList.toggle("is-video-top", !state.desk && videoPage && sectionView(page.id).video === "top");
   const title = document.getElementById("page-title");
   if (!page) {
@@ -1267,13 +1306,13 @@ function paint() {
   title.replaceChildren(document.createTextNode(visibleTitle(page)));
   if (count) title.append(el("span", { class: "clip-count", text: count }));
   const sub = document.getElementById("page-sub");
-  if (page.id === "scripture") {
+  if (kind === "scripture") {
     const round = selectedRound();
     sub.textContent = round ? roundLabel(round) : "";
   } else if (!subtitle()) sub.replaceChildren();
   else paintSongTitle(sub, currentClip());
   paintNav();
-  if (!state.desk) document.title = page.id === "sermon" ? "설교" : (visibleTitle(page) || page.title);
+  if (!state.desk) document.title = kind === "sermon" ? "설교" : (visibleTitle(page) || page.title);
   syncVeil();
   paintSeek();
   const key = stageKey();
@@ -1285,45 +1324,51 @@ function paint() {
   if (state.sectionsOpen) paintSections();
   paintPlayTip();
   paintCanva();
-  if (!state.desk && !state.counting && !state.finished && page.id !== "sermon" && page.id !== "scripture") prepareClip(false);
+  if (!state.desk && !state.counting && !state.finished && kind !== "sermon" && kind !== "scripture" && kind !== "board") prepareClip(false);
 }
 
 function paintStage() {
   const stage = document.getElementById("stage");
   stage.replaceChildren();
+  stopBoardType();
   const id = pageId();
+  const kind = pageKind(id);
   const clip = currentClip();
-  if (state.finished || (id === "random" && state.randomPhase === "finish")) {
+  if (state.finished || (kind === "random" && state.randomPhase === "finish")) {
     stage.append(el("p", { class: "finish-show", text: "Finish!" }));
     return;
   }
-  if (id === "sermon") {
-    if (!canvaEmbed(sermonUrl())) stage.append(el("p", { class: "sermon-empty", text: "캔바 슬라이드 주소를 넣어 주세요." }));
+  if (kind === "board") {
+    paintBoard(stage, id);
     return;
   }
-  if (id === "birthday") {
+  if (kind === "sermon") {
+    if (!canvaEmbed(sermonUrl(id))) stage.append(el("p", { class: "sermon-empty", text: "캔바 슬라이드 주소를 넣어 주세요." }));
+    return;
+  }
+  if (kind === "birthday") {
     stage.append(el("div", { class: "birthday-dim" }));
     const names = el("p", { class: "birthday-names", text: birthdayNames() });
     stage.append(names);
     fitBirthdayNames(names);
     return;
   }
-  if (id === "scripture") {
+  if (kind === "scripture") {
     paintScripture(stage);
     return;
   }
-  if (id === "random" && state.randomPhase === "start") {
+  if (kind === "random" && state.randomPhase === "start") {
     const button = el("button", { type: "button", class: "answer", text: "Start" });
     button.addEventListener("click", startRandom);
     stage.append(button);
     return;
   }
-  if (id === "random" && state.randomPhase === "play") {
+  if (kind === "random" && state.randomPhase === "play") {
     appendShowToggles(stage);
     appendCenterTitle(stage, clip);
     return;
   }
-  if (id === "guess" && !state.revealed) {
+  if (kind === "guess" && !state.revealed) {
     const button = el("button", { type: "button", class: "answer", text: "정답" });
     button.addEventListener("click", () => {
       state.revealed = true;
@@ -1334,12 +1379,12 @@ function paintStage() {
     appendShowToggles(stage);
     return;
   }
-  if (id === "guess" && state.revealed) {
+  if (kind === "guess" && state.revealed) {
     appendShowToggles(stage);
     appendCenterTitle(stage, clip);
     return;
   }
-  if (id === "lyrics") {
+  if (kind === "lyrics") {
     if (!state.lyricsShown) {
       const button = el("button", { type: "button", class: "answer", text: "정답" });
       button.addEventListener("click", () => {
@@ -1362,10 +1407,11 @@ function paintStage() {
 
 function appendCenterTitle(stage, clip) {
   const id = pageId();
+  const kind = pageKind(id);
   if (!clip || state.counting || !titleShown(id) || sectionView(id).title !== "center") return;
-  if (id === "random" && state.randomPhase !== "play") return;
-  if (id === "guess" && !state.revealed) return;
-  if (id === "lyrics" && !state.lyricsShown) return;
+  if (kind === "random" && state.randomPhase !== "play") return;
+  if (kind === "guess" && !state.revealed) return;
+  if (kind === "lyrics" && !state.lyricsShown) return;
   const title = el("p", { class: "random-title" });
   paintSongTitle(title, clip);
   stage.append(title);
@@ -1522,6 +1568,8 @@ function normalizeFeatures() {
   } else if (!Array.isArray(state.doc.scripture.rounds)) {
     state.doc.scripture.rounds = [];
   }
+  if (!Array.isArray(state.doc.hidden)) state.doc.hidden = [];
+  state.doc.board = boardPayload(state.doc.board);
 }
 
 function blankNames() {
@@ -1574,8 +1622,83 @@ function fitBirthdayNames(node) {
   }
 }
 
-function sermonUrl() {
+function sermonUrl(id) {
+  const target = id || pageId();
+  if (target && target !== "sermon" && pageKind(target) === "sermon") {
+    const section = sectionRecord(target);
+    return (section && section.url) || "";
+  }
   return (state.doc.sermon && state.doc.sermon.url) || "";
+}
+
+function setSermonUrl(id, url) {
+  if (!id || id === "sermon") {
+    state.doc.sermon = { url: url };
+    return;
+  }
+  const section = sectionRecord(id);
+  if (section) section.url = url;
+}
+
+function boardColor(value) {
+  const color = String(value || "").trim().toLowerCase();
+  return /^#([0-9a-f]{6}|[0-9a-f]{3})$/.test(color) ? color : "#ffffff";
+}
+
+function boardPayload(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const sentSource = source.sent && typeof source.sent === "object" ? source.sent : null;
+  return {
+    text: String(source.text || "").slice(0, 2000),
+    size: source.size === "small" || source.size === "large" ? source.size : "normal",
+    color: boardColor(source.color),
+    mode: source.mode === "type" ? "type" : "plain",
+    sent: sentSource ? {
+      text: String(sentSource.text || "").slice(0, 2000),
+      size: sentSource.size === "small" || sentSource.size === "large" ? sentSource.size : "normal",
+      color: boardColor(sentSource.color),
+      mode: sentSource.mode === "type" ? "type" : "plain"
+    } : null
+  };
+}
+
+function boardStore(id) {
+  if (!id || id === "board" || pageKind(id) !== "board") {
+    state.doc.board = boardPayload(state.doc.board);
+    return state.doc.board;
+  }
+  const section = sectionRecord(id);
+  if (!section) {
+    state.doc.board = boardPayload(state.doc.board);
+    return state.doc.board;
+  }
+  section.board = boardPayload(section.board);
+  return section.board;
+}
+
+function stopBoardType() {
+  if (boardTimer) window.clearInterval(boardTimer);
+  boardTimer = 0;
+}
+
+function paintBoard(stage, id) {
+  const sent = boardStore(id).sent;
+  const node = el("p", { class: "board-show is-" + ((sent && sent.size) || "normal") });
+  node.style.color = (sent && sent.color) || "#ffffff";
+  stage.append(node);
+  if (!sent || !sent.text) return;
+  if (sent.mode !== "type") {
+    node.textContent = sent.text;
+    return;
+  }
+  const text = sent.text;
+  let index = 0;
+  node.textContent = "";
+  boardTimer = window.setInterval(() => {
+    index += 1;
+    node.textContent = text.slice(0, index);
+    if (index >= text.length) stopBoardType();
+  }, 48);
 }
 
 function canvaEmbed(url) {
@@ -1619,8 +1742,8 @@ function paintCanva() {
       }, 450);
     });
   }
-  const show = !state.desk && pageId() === "sermon";
-  const url = show ? canvaFrameUrl(sermonUrl()) : "";
+  const show = !state.desk && pageKind(pageId()) === "sermon";
+  const url = show ? canvaFrameUrl(sermonUrl(pageId())) : "";
   if (!url) {
     frame.classList.remove("is-in");
     frame.hidden = true;
@@ -1738,15 +1861,16 @@ function richBox(label, html) {
   };
 }
 
-function sermonBlock() {
-  const current = sermonUrl();
-  const input = el("input", { class: "wide-input", value: current, maxlength: "500", placeholder: "https://canva.link/…", "aria-label": "설교 URL" });
+function sermonBlock(id) {
+  const sectionId = id || "sermon";
+  const page = findPage(sectionId);
+  const input = el("input", { class: "wide-input", value: sermonUrl(sectionId), maxlength: "500", placeholder: "https://canva.link/…", "aria-label": "설교 URL" });
   bindLiveSave(input, (force) => {
     const next = input.value.trim();
-    const saved = sermonUrl();
+    const saved = sermonUrl(sectionId);
     if (next === saved) return;
     if (!next) {
-      state.doc.sermon = { url: "" };
+      setSermonUrl(sectionId, "");
       queueSave();
       return;
     }
@@ -1757,12 +1881,12 @@ function sermonBlock() {
       input.value = saved;
       return;
     }
-    state.doc.sermon = { url: embed };
+    setSermonUrl(sectionId, embed);
     if (force) input.value = embed;
     queueSave();
   });
   return el("section", { class: "desk-block feature-block" }, [
-    el("h2", { text: "설교" }),
+    el("h2", { text: page ? page.title : "설교" }),
     el("label", { text: "설교 URL" }),
     input
   ]);
@@ -1990,17 +2114,24 @@ function scriptureList() {
 }
 
 function findPage(id) {
-  return pagesFrom([id])[0] || null;
+  const page = sectionPool().find((item) => item.id === id);
+  if (!page) return null;
+  return { id: page.id, title: pageTitle(page) };
 }
 
 function deskSection(id) {
-  if (id === "videos") return videoBlock();
-  if (id === "cue") return cueBlock();
-  if (id === "accounts") return accountBlock();
-  if (id === "sermon") return sermonBlock();
-  if (id === "birthday") return birthdayBlock();
-  if (id === "scripture") return scriptureBlock();
-  return pageBlock(findPage(id));
+  let block = null;
+  if (id === "videos") block = videoBlock();
+  else if (id === "cue") block = cueBlock();
+  else if (id === "accounts") block = accountBlock();
+  else if (id === "hidden") block = hiddenBlock();
+  else if (id === "board" || pageKind(id) === "board") block = boardBlock(id);
+  else if (id === "sermon" || pageKind(id) === "sermon") block = sermonBlock(id);
+  else if (id === "birthday") block = birthdayBlock();
+  else if (id === "scripture") block = scriptureBlock();
+  else block = pageBlock(findPage(id));
+  if (findPage(id)) return withSectionTools(block, id);
+  return block;
 }
 
 function loginCard() {
@@ -2020,7 +2151,8 @@ function loginCard() {
 
 function editorCard() {
   const place = placement();
-  const known = new Set(place.active.concat(place.inactive, ["videos", "cue", "accounts"]));
+  const hidden = Array.isArray(state.doc.hidden) ? state.doc.hidden : [];
+  const known = new Set(place.active.concat(place.inactive, hidden, ["videos", "cue", "accounts", "hidden"]));
   if (!known.has(state.deskTab)) state.deskTab = "videos";
   const nav = el("nav", { class: "desk-nav", id: "desk-nav", "aria-label": "관리 섹션" });
   nav.append(el("p", { class: "zone-label", text: "사용" }));
@@ -2039,6 +2171,7 @@ function editorCard() {
   [
     { id: "videos", title: "유튜브 영상" },
     { id: "cue", title: "사이 음향" },
+    { id: "hidden", title: "숨긴 섹션" },
     { id: "accounts", title: "계정 관리" }
   ].forEach((tab) => tools.append(toolRow(tab)));
   nav.append(tools);
@@ -2463,7 +2596,7 @@ function viewPair(children) {
 
 function viewBar(pageId) {
   const view = sectionView(pageId);
-  const lockTop = pageId === "lyrics";
+  const lockTop = pageKind(pageId) === "lyrics";
   const title = el("div", { class: "view-group" }, [
     el("span", { class: "view-label", text: "제목" }),
     viewPair([
@@ -2670,6 +2803,220 @@ function openNameModal(page) {
   input.select();
 }
 
+function withSectionTools(block, id) {
+  const page = findPage(id);
+  if (!block || !page) return block;
+  const tools = sectionTools(page);
+  const heading = block.querySelector("h2");
+  if (heading) heading.insertAdjacentElement("afterend", tools);
+  else block.prepend(tools);
+  return block;
+}
+
+function sectionTools(page) {
+  const hidden = isHidden(page.id);
+  const copy = el("button", { type: "button", class: "ghost", text: "복사" });
+  copy.addEventListener("click", () => copySection(page));
+  const hide = el("button", {
+    type: "button",
+    class: "ghost",
+    text: hidden ? "숨김 해제" : "숨김",
+    "aria-pressed": hidden ? "true" : "false"
+  });
+  hide.addEventListener("click", () => toggleHidden(page.id));
+  return el("div", { class: "section-tools" }, [copy, hide]);
+}
+
+function isHidden(id) {
+  return Array.isArray(state.doc.hidden) && state.doc.hidden.includes(id);
+}
+
+function toggleHidden(id) {
+  if (!Array.isArray(state.doc.hidden)) state.doc.hidden = [];
+  const place = placement();
+  if (isHidden(id)) {
+    state.doc.hidden = state.doc.hidden.filter((item) => item !== id);
+    state.doc.active = place.active.filter((item) => item !== id);
+    state.doc.inactive = place.inactive.filter((item) => item !== id).concat(id);
+  } else {
+    if (!state.doc.hidden.includes(id)) state.doc.hidden.push(id);
+    state.doc.active = place.active.filter((item) => item !== id);
+    state.doc.inactive = place.inactive.filter((item) => item !== id);
+  }
+  state.doc.tabOrder = state.doc.active.slice();
+  queueSave();
+  renderDesk();
+}
+
+function copyTitle(title) {
+  const used = new Set(sectionPool().map((page) => pageTitle(page)));
+  let number = 1;
+  let next = title + " 복사";
+  while (used.has(next)) {
+    number += 1;
+    next = title + " 복사 " + number;
+  }
+  return next;
+}
+
+function copyKind(kind) {
+  if (kind === "lyrics" || kind === "guess" || kind === "random" || kind === "sermon" || kind === "board") return kind;
+  return "list";
+}
+
+function cloneClips(page, kind) {
+  if (kind === "grade") {
+    const clips = [];
+    state.doc.grades.forEach((grade) => {
+      (grade.items || []).forEach((item) => {
+        if (!item || !item.video) return;
+        clips.push({ id: uid(), video: item.video, start: item.start, end: item.end });
+      });
+    });
+    return clips;
+  }
+  if (kind === "birthday") {
+    const url = birthdayDoc().video;
+    const youtube = youtubeId(url);
+    if (!youtube) return [];
+    let video = state.doc.videos.find((item) => youtubeId(item.url) === youtube);
+    if (!video) {
+      video = { id: uid(), title: page.title, url: url };
+      state.doc.videos.push(video);
+    }
+    return [{ id: uid(), video: video.id, start: null, end: null }];
+  }
+  const list = state.doc.pages[page.id];
+  if (!Array.isArray(list)) return [];
+  return list.map((clip) => ({
+    id: uid(),
+    video: clip.video,
+    start: clip.start,
+    end: clip.end,
+    lyrics: clip.lyrics || ""
+  }));
+}
+
+function copySection(page) {
+  if ((state.doc.sections || []).length >= 30) {
+    toast("섹션은 30개까지 만들 수 있습니다.");
+    return;
+  }
+  const kind = pageKind(page.id);
+  const id = uid();
+  const title = copyTitle(page.title);
+  const section = { id: id, title: title, kind: copyKind(kind), url: "" };
+  if (kind === "sermon") section.url = sermonUrl(page.id);
+  if (section.kind === "board") section.board = boardPayload(boardStore(page.id));
+  if (!Array.isArray(state.doc.sections)) state.doc.sections = [];
+  if (!state.doc.pages || Array.isArray(state.doc.pages)) state.doc.pages = {};
+  if (!state.doc.names || Array.isArray(state.doc.names)) state.doc.names = {};
+  if (!state.doc.views || Array.isArray(state.doc.views)) state.doc.views = {};
+  state.doc.sections.push(section);
+  state.doc.names[id] = title;
+  state.doc.pages[id] = cloneClips(page, kind);
+  if (state.doc.views[page.id]) state.doc.views[id] = JSON.parse(JSON.stringify(state.doc.views[page.id]));
+  const place = placement();
+  state.doc.active = place.active.filter((item) => item !== id);
+  state.doc.inactive = place.inactive.filter((item) => item !== id).concat(id);
+  state.doc.tabOrder = state.doc.active.slice();
+  state.deskTab = id;
+  document.body.classList.remove("desk-open");
+  queueSave();
+  renderDesk();
+  toast("미사용 목록에 복사했습니다.");
+}
+
+function hiddenBlock() {
+  const block = el("section", { class: "desk-block" }, [
+    el("h2", { text: "숨긴 섹션" })
+  ]);
+  const ids = (Array.isArray(state.doc.hidden) ? state.doc.hidden : []).filter((id) => findPage(id));
+  if (!ids.length) {
+    block.append(el("p", { class: "zone-empty", text: "숨긴 섹션이 없습니다." }));
+    return block;
+  }
+  const list = el("div", { class: "hidden-list" });
+  ids.forEach((id) => {
+    const page = findPage(id);
+    const button = el("button", { type: "button", class: "ghost hidden-open", text: page.title });
+    button.addEventListener("click", () => {
+      state.deskTab = id;
+      document.body.classList.remove("desk-open");
+      renderDesk();
+    });
+    list.append(button);
+  });
+  block.append(list);
+  return block;
+}
+
+function boardHex(value) {
+  const color = boardColor(value);
+  if (color.length === 4) return "#" + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
+  return color;
+}
+
+function boardBlock(id) {
+  const sectionId = id || "board";
+  const page = findPage(sectionId);
+  const store = boardStore(sectionId);
+  const text = el("textarea", { class: "board-text", rows: "6", maxlength: "2000", "aria-label": "화면 글" });
+  text.value = store.text;
+  const draft = () => ({
+    text: text.value.slice(0, 2000),
+    size: store.size === "small" || store.size === "large" ? store.size : "normal",
+    color: boardColor(store.color),
+    mode: store.mode === "type" ? "type" : "plain"
+  });
+  const saveDraft = (patch) => {
+    const live = boardStore(sectionId);
+    const next = Object.assign(draft(), patch || {});
+    if (live.text === next.text && live.size === next.size && live.color === next.color && live.mode === next.mode) return;
+    live.text = next.text;
+    live.size = next.size;
+    live.color = next.color;
+    live.mode = next.mode;
+    queueSave();
+  };
+  bindLiveSave(text, () => saveDraft());
+  const color = el("input", { class: "board-color", type: "color", value: boardHex(store.color), "aria-label": "글자색" });
+  color.addEventListener("input", () => saveDraft({ color: color.value }));
+  const send = el("button", { type: "button", class: "board-send", text: "화면 전송" });
+  send.addEventListener("click", () => {
+    const live = boardStore(sectionId);
+    const next = draft();
+    next.color = boardColor(color.value || next.color);
+    live.text = next.text;
+    live.size = next.size;
+    live.color = next.color;
+    live.mode = next.mode;
+    live.sent = { text: next.text, size: next.size, color: next.color, mode: next.mode };
+    queueSave();
+    toast("진행 화면에 보냈습니다.");
+  });
+  return el("section", { class: "desk-block feature-block" }, [
+    el("h2", { text: page ? page.title : "화면 입력" }),
+    text,
+    el("div", { class: "board-row" }, [
+      el("span", { class: "view-name", text: "크기" }),
+      viewPos("작게", store.size === "small", false, () => { saveDraft({ size: "small" }); renderDesk(); }),
+      viewPos("보통", store.size !== "small" && store.size !== "large", false, () => { saveDraft({ size: "normal" }); renderDesk(); }),
+      viewPos("크게", store.size === "large", false, () => { saveDraft({ size: "large" }); renderDesk(); })
+    ]),
+    el("div", { class: "board-row" }, [
+      el("span", { class: "view-name", text: "색상" }),
+      color
+    ]),
+    el("div", { class: "board-row" }, [
+      el("span", { class: "view-name", text: "표시" }),
+      viewPos("일반", store.mode !== "type", false, () => { saveDraft({ mode: "plain" }); renderDesk(); }),
+      viewPos("타이핑", store.mode === "type", false, () => { saveDraft({ mode: "type" }); renderDesk(); })
+    ]),
+    el("div", { class: "board-row" }, [send])
+  ]);
+}
+
 function pageBlock(page) {
   if (!page) return el("section", { class: "desk-block" });
   const block = el("section", { class: "desk-block" }, [
@@ -2690,7 +3037,7 @@ function pageBlock(page) {
   block.append(saveAllBar());
   if (page.id === "random") block.append(playSpanBar());
   const sectionId = page.id;
-  mountClips(block, () => state.doc.pages[sectionId], page.id === "lyrics");
+  mountClips(block, () => state.doc.pages[sectionId], pageKind(page.id) === "lyrics");
   return block;
 }
 
@@ -3566,7 +3913,7 @@ function clipBounds(clip) {
   let duration = 0;
   try { duration = player && player.getDuration ? player.getDuration() || 0 : 0; } catch (error) { duration = 0; }
   const start = clip.start || 0;
-  if (pageId() === "lyrics") {
+  if (pageKind(pageId()) === "lyrics") {
     const songEnd = duration > start ? duration : (clip.end != null && clip.end > start ? clip.end : start + 1);
     return { start: start, end: songEnd };
   }
@@ -3580,7 +3927,7 @@ function clipBounds(clip) {
 function seekVisible() {
   const clip = currentClip();
   if (!clip || state.desk || state.counting || state.finished || state.loadedId !== clip.clipId) return false;
-  if (pageId() === "random" && state.randomPhase !== "play") return false;
+  if (pageKind(pageId()) === "random" && state.randomPhase !== "play") return false;
   return true;
 }
 
@@ -3595,7 +3942,7 @@ function paintSeekMark(bounds) {
   const clip = currentClip();
   const span = bounds.end - bounds.start;
   const stop = clip && clip.end;
-  const show = pageId() === "lyrics" && stop != null && span > 0 && stop > bounds.start && stop < bounds.end - 0.25;
+  const show = pageKind(pageId()) === "lyrics" && stop != null && span > 0 && stop > bounds.start && stop < bounds.end - 0.25;
   mark.hidden = !show;
   if (!show) return;
   mark.style.setProperty("--mark", String((stop - bounds.start) / span));
@@ -3647,16 +3994,18 @@ function paintPlayTip() {
 function playNeedsButton() {
   const clip = currentClip();
   const id = pageId();
+  const kind = pageKind(id);
   if (!clip || state.desk || state.counting || state.finished) return false;
-  if (id === "random" || id === "scripture" || id === "sermon") return false;
+  if (kind === "random" || kind === "scripture" || kind === "sermon" || kind === "board") return false;
   return state.startedKey !== id + ":" + clip.clipId;
 }
 
 function playbackBlocked() {
   if (state.finished) return true;
   const id = pageId();
-  if (id === "scripture" || id === "sermon") return true;
-  if (id === "random" && state.randomPhase !== "play") return true;
+  const kind = pageKind(id);
+  if (kind === "scripture" || kind === "sermon" || kind === "board") return true;
+  if (kind === "random" && state.randomPhase !== "play") return true;
   return !currentClip();
 }
 
@@ -3680,7 +4029,7 @@ function resumePlay() {
   const code = playerCode();
   const same = state.loadedId === clip.clipId;
   if (same && code === 1) return;
-  if (pageId() === "lyrics" && state.windowDone && code === 2) {
+  if (pageKind(pageId()) === "lyrics" && state.windowDone && code === 2) {
     resumeLyrics();
     return;
   }
@@ -3829,6 +4178,9 @@ async function boot() {
     toast("저장된 목록을 불러오지 못했습니다.");
   }
   setInterval(() => { refresh(); }, 5000);
+  setInterval(() => {
+    if (!state.desk && pageKind(pageId()) === "board") refresh();
+  }, 1000);
   window.addEventListener("pagehide", saveOnLeave);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") saveOnLeave();
